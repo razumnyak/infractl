@@ -4,17 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>infractl - Monitoring Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
         :root {
             --bg-primary: #0f172a;
             --bg-secondary: #1e293b;
             --bg-card: #334155;
+            --bg-hover: #475569;
             --text-primary: #f1f5f9;
             --text-secondary: #94a3b8;
+            --text-muted: #64748b;
             --accent: #3b82f6;
+            --accent-hover: #2563eb;
             --success: #22c55e;
             --warning: #eab308;
             --danger: #ef4444;
+            --border: #475569;
+            --sidebar-width: 240px;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -22,58 +28,173 @@
             background: var(--bg-primary);
             color: var(--text-primary);
             min-height: 100vh;
+            display: flex;
         }
-        .header {
+
+        /* Sidebar */
+        .sidebar {
+            width: var(--sidebar-width);
             background: var(--bg-secondary);
-            padding: 1rem 2rem;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            z-index: 100;
+            transition: transform 0.3s ease;
+        }
+        .sidebar-header {
+            padding: 1.25rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .sidebar-header h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .sidebar-header .version {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+        .sidebar-nav { flex: 1; padding: 1rem 0; }
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1.25rem;
+            color: var(--text-secondary);
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .nav-item:hover { background: var(--bg-card); color: var(--text-primary); }
+        .nav-item.active {
+            background: var(--accent);
+            color: white;
+            border-right: 3px solid var(--accent-hover);
+        }
+        .nav-icon { width: 20px; height: 20px; }
+        .sidebar-footer {
+            padding: 1rem 1.25rem;
+            border-top: 1px solid var(--border);
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--danger);
+        }
+        .status-dot.connected { background: var(--success); }
+
+        /* Main Content */
+        .main {
+            flex: 1;
+            margin-left: var(--sidebar-width);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .topbar {
+            background: var(--bg-secondary);
+            padding: 1rem 1.5rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 50;
         }
-        .header h1 { font-size: 1.5rem; font-weight: 600; }
-        .header .version { color: var(--text-secondary); font-size: 0.875rem; }
-        .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; }
+        .topbar-title { font-size: 1.25rem; font-weight: 600; }
+        .topbar-actions { display: flex; align-items: center; gap: 1rem; }
+        .mobile-menu-btn {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        /* Content Area */
+        .content { flex: 1; padding: 1.5rem; overflow-y: auto; }
+
+        /* Cards */
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.25rem; }
+        .grid-2 { grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); }
         .card {
             background: var(--bg-secondary);
             border-radius: 0.75rem;
-            padding: 1.5rem;
-            border: 1px solid var(--bg-card);
+            border: 1px solid var(--border);
+            overflow: hidden;
         }
         .card-header {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 1rem;
         }
-        .card-title { font-size: 1.125rem; font-weight: 600; }
-        .status-badge {
+        .card-title { font-size: 1rem; font-weight: 600; }
+        .card-body { padding: 1.25rem; }
+        .card-footer {
+            padding: 0.75rem 1.25rem;
+            border-top: 1px solid var(--border);
+            background: var(--bg-card);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        /* Status Badges */
+        .badge {
             padding: 0.25rem 0.75rem;
             border-radius: 9999px;
             font-size: 0.75rem;
             font-weight: 500;
         }
-        .status-healthy { background: rgba(34, 197, 94, 0.2); color: var(--success); }
-        .status-warning { background: rgba(234, 179, 8, 0.2); color: var(--warning); }
-        .status-error { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
-        .status-unknown { background: rgba(148, 163, 184, 0.2); color: var(--text-secondary); }
-        .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 1rem; }
-        .metric {
+        .badge-healthy { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+        .badge-warning { background: rgba(234, 179, 8, 0.2); color: var(--warning); }
+        .badge-error { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+        .badge-unknown { background: rgba(148, 163, 184, 0.2); color: var(--text-secondary); }
+        .badge-pending { background: rgba(59, 130, 246, 0.2); color: var(--accent); }
+        .badge-running { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+
+        /* Metrics */
+        .metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+        .metric-box {
             background: var(--bg-card);
             padding: 1rem;
             border-radius: 0.5rem;
         }
         .metric-label { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.25rem; }
-        .metric-value { font-size: 1.25rem; font-weight: 600; }
-        .progress-bar {
+        .metric-value { font-size: 1.5rem; font-weight: 700; }
+        .metric-value.small { font-size: 1.125rem; }
+        .metric-change {
+            font-size: 0.75rem;
+            margin-top: 0.25rem;
+        }
+        .metric-change.up { color: var(--success); }
+        .metric-change.down { color: var(--danger); }
+
+        /* Progress Bar */
+        .progress {
             height: 6px;
             background: var(--bg-primary);
             border-radius: 3px;
             margin-top: 0.5rem;
             overflow: hidden;
         }
-        .progress-fill {
+        .progress-bar {
             height: 100%;
             border-radius: 3px;
             transition: width 0.3s ease;
@@ -81,119 +202,506 @@
         .progress-low { background: var(--success); }
         .progress-medium { background: var(--warning); }
         .progress-high { background: var(--danger); }
-        .refresh-btn {
-            background: var(--accent);
-            color: white;
-            border: none;
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
             padding: 0.5rem 1rem;
             border-radius: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            border: none;
             cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-secondary { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: var(--bg-hover); }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-danger:hover { opacity: 0.9; }
+        .btn-sm { padding: 0.375rem 0.75rem; font-size: 0.75rem; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Tables */
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        th {
+            background: var(--bg-card);
+            font-weight: 600;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+        tr:hover { background: var(--bg-card); }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 1.5rem;
+        }
+        .tab {
+            padding: 0.75rem 1.25rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .tab:hover { color: var(--text-primary); }
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        /* Forms */
+        .form-group { margin-bottom: 1rem; }
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+        .form-select, .form-input {
+            width: 100%;
+            padding: 0.625rem 0.875rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            color: var(--text-primary);
             font-size: 0.875rem;
         }
-        .refresh-btn:hover { opacity: 0.9; }
-        .last-updated { color: var(--text-secondary); font-size: 0.75rem; }
-        .loading { opacity: 0.5; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        .loading .card { animation: pulse 1.5s infinite; }
+        .form-select:focus, .form-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s;
+        }
+        .modal-overlay.active { opacity: 1; visibility: visible; }
+        .modal {
+            background: var(--bg-secondary);
+            border-radius: 0.75rem;
+            border: 1px solid var(--border);
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow: auto;
+        }
+        .modal-header {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-title { font-size: 1.125rem; font-weight: 600; }
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+            line-height: 1;
+        }
+        .modal-body { padding: 1.25rem; }
+        .modal-footer {
+            padding: 1rem 1.25rem;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+        }
+
+        /* Loading States */
+        .skeleton {
+            background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-hover) 50%, var(--bg-card) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 0.25rem;
+        }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Error State */
+        .error-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary);
+        }
+        .error-icon { font-size: 3rem; margin-bottom: 1rem; }
+        .error-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-primary); }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary);
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            z-index: 1100;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .toast {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1rem 1.25rem;
+            min-width: 300px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            animation: slideIn 0.3s ease;
+        }
+        .toast.success { border-left: 4px solid var(--success); }
+        .toast.error { border-left: 4px solid var(--danger); }
+        .toast.warning { border-left: 4px solid var(--warning); }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        /* Chart Container */
+        .chart-container {
+            position: relative;
+            height: 200px;
+        }
+
+        /* Views (hidden by default) */
+        .view { display: none; }
+        .view.active { display: block; }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            .sidebar.open { transform: translateX(0); }
+            .main { margin-left: 0; }
+            .mobile-menu-btn { display: block; }
+            .grid { grid-template-columns: 1fr; }
+            .grid-2 { grid-template-columns: 1fr; }
+            .metrics-grid { grid-template-columns: 1fr; }
+            .topbar-title { font-size: 1rem; }
+        }
     </style>
 </head>
 <body>
-    <header class="header">
-        <div>
-            <h1>infractl</h1>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h1>
+                <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
+                </svg>
+                infractl
+            </h1>
             <span class="version" id="version">v0.1.0</span>
         </div>
-        <div style="display: flex; align-items: center; gap: 1rem;">
-            <span class="last-updated">Last updated: <span id="lastUpdate">-</span></span>
-            <button class="refresh-btn" onclick="refreshAll()">Refresh</button>
+        <nav class="sidebar-nav">
+            <a class="nav-item active" data-view="overview">
+                <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                </svg>
+                Overview
+            </a>
+            <a class="nav-item" data-view="agents">
+                <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
+                </svg>
+                Agents
+            </a>
+            <a class="nav-item" data-view="deployments">
+                <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Deployments
+            </a>
+            <a class="nav-item" data-view="metrics">
+                <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                </svg>
+                Metrics
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <div class="connection-status">
+                <span class="status-dot" id="connectionDot"></span>
+                <span id="connectionText">Disconnected</span>
+            </div>
         </div>
-    </header>
-    <main class="container">
-        <div class="grid" id="agentsGrid">
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">Loading...</span>
-                    <span class="status-badge status-unknown">Unknown</span>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+        <header class="topbar">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <button class="mobile-menu-btn" onclick="toggleSidebar()">&#9776;</button>
+                <span class="topbar-title" id="pageTitle">Overview</span>
+            </div>
+            <div class="topbar-actions">
+                <span style="font-size: 0.75rem; color: var(--text-secondary);">
+                    Updated: <span id="lastUpdate">-</span>
+                </span>
+                <button class="btn btn-primary btn-sm" onclick="refreshAll()">
+                    <svg style="width: 16px; height: 16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+        </header>
+
+        <div class="content">
+            <!-- Overview View -->
+            <div class="view active" id="view-overview">
+                <!-- Stats Cards -->
+                <div class="grid" style="margin-bottom: 1.5rem;">
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="metric-label">Total Agents</div>
+                            <div class="metric-value" id="statTotalAgents">-</div>
+                            <div class="metric-change up" id="statAgentsOnline">- online</div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="metric-label">Active Deployments</div>
+                            <div class="metric-value" id="statActiveJobs">0</div>
+                            <div class="metric-change" id="statPendingJobs">0 pending</div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="metric-label">Avg CPU Usage</div>
+                            <div class="metric-value" id="statAvgCpu">-%</div>
+                            <div class="progress" style="margin-top: 0.5rem;">
+                                <div class="progress-bar progress-low" id="statAvgCpuBar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="metric-label">Avg Memory Usage</div>
+                            <div class="metric-value" id="statAvgMem">-%</div>
+                            <div class="progress" style="margin-top: 0.5rem;">
+                                <div class="progress-bar progress-low" id="statAvgMemBar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts -->
+                <div class="grid grid-2" style="margin-bottom: 1.5rem;">
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">CPU Usage (Last 24h)</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="chart-container">
+                                <canvas id="cpuChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Memory Usage (Last 24h)</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="chart-container">
+                                <canvas id="memoryChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Agent Overview Cards -->
+                <h3 style="margin-bottom: 1rem; font-size: 1rem; color: var(--text-secondary);">Agent Status</h3>
+                <div class="grid" id="overviewAgentsGrid">
+                    <div class="card"><div class="card-body"><div class="skeleton" style="height: 100px;"></div></div></div>
+                </div>
+            </div>
+
+            <!-- Agents View -->
+            <div class="view" id="view-agents">
+                <div class="grid" id="agentsGrid">
+                    <div class="card"><div class="card-body"><div class="skeleton" style="height: 200px;"></div></div></div>
+                </div>
+            </div>
+
+            <!-- Deployments View -->
+            <div class="view" id="view-deployments">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h3 style="font-size: 1rem;">Deployment Queue</h3>
+                    <button class="btn btn-primary" onclick="openDeployModal()">
+                        <svg style="width: 16px; height: 16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        Trigger Deploy
+                    </button>
+                </div>
+
+                <div class="card" style="margin-bottom: 1.5rem;">
+                    <div class="card-header">
+                        <span class="card-title">Active & Pending Jobs</span>
+                        <span class="badge badge-pending" id="queueCount">0 in queue</span>
+                    </div>
+                    <div class="card-body" style="padding: 0;">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Job ID</th>
+                                        <th>Deployment</th>
+                                        <th>Status</th>
+                                        <th>Created</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="queueTable">
+                                    <tr><td colspan="5" class="empty-state">No active jobs</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Recent History</span>
+                    </div>
+                    <div class="card-body" style="padding: 0;">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Job ID</th>
+                                        <th>Deployment</th>
+                                        <th>Status</th>
+                                        <th>Completed</th>
+                                        <th>Duration</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="historyTable">
+                                    <tr><td colspan="5" class="empty-state">No history</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metrics View -->
+            <div class="view" id="view-metrics">
+                <div class="tabs">
+                    <div class="tab active" data-period="hourly">Hourly</div>
+                    <div class="tab" data-period="daily">Daily</div>
+                </div>
+
+                <div class="grid grid-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">CPU History</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="chart-container" style="height: 300px;">
+                                <canvas id="cpuHistoryChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Memory History</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="chart-container" style="height: 300px;">
+                                <canvas id="memoryHistoryChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </main>
 
-    <script>
-        const API_BASE = '';
-        let agents = [];
+    <!-- Deploy Modal -->
+    <div class="modal-overlay" id="deployModal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">Trigger Deployment</span>
+                <button class="modal-close" onclick="closeDeployModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Deployment</label>
+                    <select class="form-select" id="deploymentSelect">
+                        <option value="">Select deployment...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Source (optional)</label>
+                    <input type="text" class="form-input" id="deploySource" placeholder="manual">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDeployModal()">Cancel</button>
+                <button class="btn btn-primary" id="triggerDeployBtn" onclick="triggerDeploy()">
+                    Deploy
+                </button>
+            </div>
+        </div>
+    </div>
 
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        // State
+        let agents = [];
+        let deployments = [];
+        let homeHealth = null;
+        let charts = {};
+        let refreshInterval = null;
+        let currentView = 'overview';
+
+        // Utility Functions
         function formatBytes(bytes) {
             if (bytes === 0) return '0 B';
             const k = 1024;
             const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-        }
-
-        function getProgressClass(percent) {
-            if (percent < 60) return 'progress-low';
-            if (percent < 85) return 'progress-medium';
-            return 'progress-high';
-        }
-
-        function getStatusClass(status) {
-            switch (status) {
-                case 'healthy': return 'status-healthy';
-                case 'warning': return 'status-warning';
-                case 'error': return 'status-error';
-                default: return 'status-unknown';
-            }
-        }
-
-        function renderAgent(agent) {
-            const status = agent.status || 'unknown';
-            const health = agent.health || {};
-            const sys = health.system || {};
-
-            return `
-                <div class="card" data-agent="${agent.name}">
-                    <div class="card-header">
-                        <span class="card-title">${agent.name}</span>
-                        <span class="status-badge ${getStatusClass(status)}">${status}</span>
-                    </div>
-                    <div style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1rem;">
-                        ${agent.address}
-                    </div>
-                    ${health.status ? `
-                    <div class="metrics">
-                        <div class="metric">
-                            <div class="metric-label">CPU Usage</div>
-                            <div class="metric-value">${(sys.cpu_usage || 0).toFixed(1)}%</div>
-                            <div class="progress-bar">
-                                <div class="progress-fill ${getProgressClass(sys.cpu_usage || 0)}"
-                                     style="width: ${sys.cpu_usage || 0}%"></div>
-                            </div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">Memory</div>
-                            <div class="metric-value">${(sys.memory_usage_percent || 0).toFixed(1)}%</div>
-                            <div class="progress-bar">
-                                <div class="progress-fill ${getProgressClass(sys.memory_usage_percent || 0)}"
-                                     style="width: ${sys.memory_usage_percent || 0}%"></div>
-                            </div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">Load (1m)</div>
-                            <div class="metric-value">${(sys.load_avg?.one || 0).toFixed(2)}</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">Uptime</div>
-                            <div class="metric-value">${formatUptime(health.uptime_seconds || 0)}</div>
-                        </div>
-                    </div>
-                    ` : `
-                    <div style="color: var(--text-secondary); text-align: center; padding: 2rem;">
-                        No data available
-                    </div>
-                    `}
-                </div>
-            `;
         }
 
         function formatUptime(seconds) {
@@ -205,9 +713,82 @@
             return `${mins}m`;
         }
 
+        function formatTime(isoString) {
+            if (!isoString) return '-';
+            return new Date(isoString).toLocaleString();
+        }
+
+        function formatTimeAgo(isoString) {
+            if (!isoString) return '-';
+            const diff = Date.now() - new Date(isoString).getTime();
+            const mins = Math.floor(diff / 60000);
+            if (mins < 1) return 'just now';
+            if (mins < 60) return `${mins}m ago`;
+            const hours = Math.floor(mins / 60);
+            if (hours < 24) return `${hours}h ago`;
+            return `${Math.floor(hours / 24)}d ago`;
+        }
+
+        function getProgressClass(percent) {
+            if (percent < 60) return 'progress-low';
+            if (percent < 85) return 'progress-medium';
+            return 'progress-high';
+        }
+
+        function getBadgeClass(status) {
+            switch (status?.toLowerCase()) {
+                case 'healthy':
+                case 'completed': return 'badge-healthy';
+                case 'warning': return 'badge-warning';
+                case 'error':
+                case 'failed': return 'badge-error';
+                case 'running': return 'badge-running';
+                case 'pending': return 'badge-pending';
+                default: return 'badge-unknown';
+            }
+        }
+
+        // Navigation
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const view = item.dataset.view;
+                if (view) switchView(view);
+            });
+        });
+
+        function switchView(view) {
+            currentView = view;
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.querySelector(`[data-view="${view}"]`).classList.add('active');
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.getElementById(`view-${view}`).classList.add('active');
+            document.getElementById('pageTitle').textContent = view.charAt(0).toUpperCase() + view.slice(1);
+
+            // Load view-specific data
+            if (view === 'metrics') loadMetricsData();
+        }
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('open');
+        }
+
+        // Toast Notifications
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <span>${type === 'success' ? '✓' : type === 'error' ? '✗' : '!'}</span>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 5000);
+        }
+
+        // API Functions
         async function fetchAgents() {
             try {
-                const res = await fetch(`${API_BASE}/api/agents`);
+                const res = await fetch('/api/agents');
                 const data = await res.json();
                 return data.agents || [];
             } catch (e) {
@@ -216,9 +797,19 @@
             }
         }
 
+        async function fetchAgentStatuses() {
+            try {
+                const res = await fetch('/api/agents/statuses');
+                return await res.json();
+            } catch (e) {
+                console.error('Failed to fetch agent statuses:', e);
+                return {};
+            }
+        }
+
         async function fetchHealth() {
             try {
-                const res = await fetch(`${API_BASE}/health`);
+                const res = await fetch('/health');
                 return await res.json();
             } catch (e) {
                 console.error('Failed to fetch health:', e);
@@ -226,37 +817,388 @@
             }
         }
 
-        async function refreshAll() {
-            document.body.classList.add('loading');
-
-            // Fetch local health for Home node
-            const homeHealth = await fetchHealth();
-
-            // Fetch agents list
-            agents = await fetchAgents();
-
-            // Add Home node as first card
-            const homeAgent = {
-                name: 'Home (this)',
-                address: 'localhost',
-                status: homeHealth ? 'healthy' : 'error',
-                health: homeHealth
-            };
-
-            const grid = document.getElementById('agentsGrid');
-            grid.innerHTML = renderAgent(homeAgent) + agents.map(a => renderAgent(a)).join('');
-
-            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
-            document.getElementById('version').textContent = `v${homeHealth?.version || '0.1.0'}`;
-
-            document.body.classList.remove('loading');
+        async function fetchDeployQueue() {
+            try {
+                const res = await fetch('/webhook/queue');
+                return await res.json();
+            } catch (e) {
+                console.error('Failed to fetch queue:', e);
+                return { jobs: [], history: [], pending: 0 };
+            }
         }
 
-        // Initial load
-        refreshAll();
+        async function fetchMetrics(period = 'hourly', limit = 24) {
+            try {
+                const res = await fetch(`/api/metrics?period=${period}&limit=${limit}`);
+                return await res.json();
+            } catch (e) {
+                console.error('Failed to fetch metrics:', e);
+                return [];
+            }
+        }
 
-        // Auto-refresh every 30 seconds
-        setInterval(refreshAll, 30000);
+        // Render Functions
+        function renderAgentCard(agent, compact = false) {
+            const status = agent.status || 'unknown';
+            const health = agent.health || {};
+            const sys = health.system || {};
+
+            if (compact) {
+                return `
+                    <div class="card">
+                        <div class="card-body" style="padding: 1rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                                <span style="font-weight: 600;">${agent.name}</span>
+                                <span class="badge ${getBadgeClass(status)}">${status}</span>
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; font-size: 0.875rem;">
+                                <div>
+                                    <span style="color: var(--text-secondary);">CPU:</span>
+                                    <span style="font-weight: 500;">${(sys.cpu_usage || 0).toFixed(1)}%</span>
+                                </div>
+                                <div>
+                                    <span style="color: var(--text-secondary);">Mem:</span>
+                                    <span style="font-weight: 500;">${(sys.memory_usage_percent || 0).toFixed(1)}%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">${agent.name}</span>
+                        <span class="badge ${getBadgeClass(status)}">${status}</span>
+                    </div>
+                    <div class="card-body">
+                        <div style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1rem;">
+                            ${agent.address || 'localhost'}
+                        </div>
+                        ${health.status ? `
+                        <div class="metrics-grid">
+                            <div class="metric-box">
+                                <div class="metric-label">CPU Usage</div>
+                                <div class="metric-value small">${(sys.cpu_usage || 0).toFixed(1)}%</div>
+                                <div class="progress">
+                                    <div class="progress-bar ${getProgressClass(sys.cpu_usage || 0)}" style="width: ${sys.cpu_usage || 0}%"></div>
+                                </div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">Memory</div>
+                                <div class="metric-value small">${(sys.memory_usage_percent || 0).toFixed(1)}%</div>
+                                <div class="progress">
+                                    <div class="progress-bar ${getProgressClass(sys.memory_usage_percent || 0)}" style="width: ${sys.memory_usage_percent || 0}%"></div>
+                                </div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">Load (1m)</div>
+                                <div class="metric-value small">${(sys.load_avg?.one || 0).toFixed(2)}</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">Uptime</div>
+                                <div class="metric-value small">${formatUptime(health.uptime_seconds || 0)}</div>
+                            </div>
+                        </div>
+                        ${health.docker ? `
+                        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                            <div class="metric-label" style="margin-bottom: 0.5rem;">Docker Containers</div>
+                            <div style="display: flex; gap: 1rem; font-size: 0.875rem;">
+                                <span style="color: var(--success);">${health.docker.containers_running || 0} running</span>
+                                <span style="color: var(--text-secondary);">${health.docker.containers_stopped || 0} stopped</span>
+                            </div>
+                        </div>
+                        ` : ''}
+                        ` : `
+                        <div class="empty-state" style="padding: 2rem;">
+                            No data available
+                        </div>
+                        `}
+                    </div>
+                    <div class="card-footer">
+                        Last check: ${health.uptime_seconds ? 'online' : 'N/A'}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderQueueTable(jobs) {
+            if (!jobs || jobs.length === 0) {
+                return '<tr><td colspan="5" class="empty-state">No active jobs</td></tr>';
+            }
+            return jobs.map(job => `
+                <tr>
+                    <td style="font-family: monospace; font-size: 0.75rem;">${job.id?.slice(0, 8) || '-'}</td>
+                    <td>${job.deployment || '-'}</td>
+                    <td><span class="badge ${getBadgeClass(job.status)}">${job.status || 'unknown'}</span></td>
+                    <td style="font-size: 0.875rem;">${formatTimeAgo(job.created_at)}</td>
+                    <td>
+                        <button class="btn btn-secondary btn-sm" onclick="viewJobDetails('${job.id}')">View</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderHistoryTable(history) {
+            if (!history || history.length === 0) {
+                return '<tr><td colspan="5" class="empty-state">No history</td></tr>';
+            }
+            return history.map(job => `
+                <tr>
+                    <td style="font-family: monospace; font-size: 0.75rem;">${job.id?.slice(0, 8) || '-'}</td>
+                    <td>${job.deployment || '-'}</td>
+                    <td><span class="badge ${getBadgeClass(job.status)}">${job.status || 'unknown'}</span></td>
+                    <td style="font-size: 0.875rem;">${formatTimeAgo(job.completed_at)}</td>
+                    <td style="font-size: 0.875rem;">${job.duration ? `${job.duration}ms` : '-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Chart Functions
+        function initCharts() {
+            const chartOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#94a3b8' } },
+                    y: { grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#94a3b8' }, min: 0, max: 100 }
+                }
+            };
+
+            charts.cpu = new Chart(document.getElementById('cpuChart'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, tension: 0.4 }] },
+                options: chartOptions
+            });
+
+            charts.memory = new Chart(document.getElementById('memoryChart'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ data: [], borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', fill: true, tension: 0.4 }] },
+                options: chartOptions
+            });
+
+            charts.cpuHistory = new Chart(document.getElementById('cpuHistoryChart'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, tension: 0.4 }] },
+                options: { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, max: undefined } } }
+            });
+
+            charts.memoryHistory = new Chart(document.getElementById('memoryHistoryChart'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ data: [], borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', fill: true, tension: 0.4 }] },
+                options: { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, max: undefined } } }
+            });
+        }
+
+        function updateCharts(cpuData, memData, labels) {
+            if (charts.cpu) {
+                charts.cpu.data.labels = labels;
+                charts.cpu.data.datasets[0].data = cpuData;
+                charts.cpu.update('none');
+            }
+            if (charts.memory) {
+                charts.memory.data.labels = labels;
+                charts.memory.data.datasets[0].data = memData;
+                charts.memory.update('none');
+            }
+        }
+
+        // Deploy Modal
+        function openDeployModal() {
+            // Populate deployments dropdown (would need to fetch from API)
+            const select = document.getElementById('deploymentSelect');
+            select.innerHTML = '<option value="">Select deployment...</option>';
+            deployments.forEach(d => {
+                select.innerHTML += `<option value="${d.name}">${d.name}</option>`;
+            });
+            document.getElementById('deployModal').classList.add('active');
+        }
+
+        function closeDeployModal() {
+            document.getElementById('deployModal').classList.remove('active');
+        }
+
+        async function triggerDeploy() {
+            const deployment = document.getElementById('deploymentSelect').value;
+            if (!deployment) {
+                showToast('Please select a deployment', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('triggerDeployBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Deploying...';
+
+            try {
+                const res = await fetch(`/webhook/deploy/${deployment}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source: document.getElementById('deploySource').value || 'manual' })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    showToast(`Deployment queued: ${data.job_id?.slice(0, 8)}`, 'success');
+                    closeDeployModal();
+                    refreshAll();
+                } else {
+                    showToast(data.message || 'Deployment failed', 'error');
+                }
+            } catch (e) {
+                showToast('Failed to trigger deployment', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = 'Deploy';
+            }
+        }
+
+        function viewJobDetails(jobId) {
+            showToast(`Job ID: ${jobId}`, 'success');
+        }
+
+        // Metrics View
+        async function loadMetricsData() {
+            const period = document.querySelector('.tab.active')?.dataset.period || 'hourly';
+            const metrics = await fetchMetrics(period, 48);
+
+            if (metrics.length > 0) {
+                const labels = metrics.map(m => new Date(m.timestamp).toLocaleTimeString());
+                const cpuData = metrics.map(m => m.cpu_avg || 0);
+                const memData = metrics.map(m => m.memory_avg || 0);
+
+                charts.cpuHistory.data.labels = labels;
+                charts.cpuHistory.data.datasets[0].data = cpuData;
+                charts.cpuHistory.update('none');
+
+                charts.memoryHistory.data.labels = labels;
+                charts.memoryHistory.data.datasets[0].data = memData;
+                charts.memoryHistory.update('none');
+            }
+        }
+
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                loadMetricsData();
+            });
+        });
+
+        // Connection Status
+        function updateConnectionStatus(connected) {
+            const dot = document.getElementById('connectionDot');
+            const text = document.getElementById('connectionText');
+            dot.classList.toggle('connected', connected);
+            text.textContent = connected ? 'Connected' : 'Disconnected';
+        }
+
+        // Main Refresh
+        async function refreshAll() {
+            try {
+                // Fetch all data
+                homeHealth = await fetchHealth();
+                agents = await fetchAgents();
+                const statuses = await fetchAgentStatuses();
+                const queue = await fetchDeployQueue();
+
+                // Merge statuses into agents
+                agents = agents.map(a => ({
+                    ...a,
+                    status: statuses[a.name]?.status || 'unknown',
+                    health: statuses[a.name]
+                }));
+
+                // Home agent
+                const homeAgent = {
+                    name: 'Home (this)',
+                    address: 'localhost',
+                    status: homeHealth ? 'healthy' : 'error',
+                    health: homeHealth
+                };
+
+                // Update Overview Stats
+                document.getElementById('statTotalAgents').textContent = agents.length + 1;
+                const onlineCount = agents.filter(a => a.status === 'healthy').length + (homeHealth ? 1 : 0);
+                document.getElementById('statAgentsOnline').textContent = `${onlineCount} online`;
+
+                document.getElementById('statActiveJobs').textContent = queue.jobs?.filter(j => j.status === 'Running').length || 0;
+                document.getElementById('statPendingJobs').textContent = `${queue.pending || 0} pending`;
+
+                // Calculate averages
+                const allAgents = [homeAgent, ...agents].filter(a => a.health?.system);
+                if (allAgents.length > 0) {
+                    const avgCpu = allAgents.reduce((sum, a) => sum + (a.health.system.cpu_usage || 0), 0) / allAgents.length;
+                    const avgMem = allAgents.reduce((sum, a) => sum + (a.health.system.memory_usage_percent || 0), 0) / allAgents.length;
+
+                    document.getElementById('statAvgCpu').textContent = avgCpu.toFixed(1) + '%';
+                    document.getElementById('statAvgCpuBar').style.width = avgCpu + '%';
+                    document.getElementById('statAvgCpuBar').className = `progress-bar ${getProgressClass(avgCpu)}`;
+
+                    document.getElementById('statAvgMem').textContent = avgMem.toFixed(1) + '%';
+                    document.getElementById('statAvgMemBar').style.width = avgMem + '%';
+                    document.getElementById('statAvgMemBar').className = `progress-bar ${getProgressClass(avgMem)}`;
+                }
+
+                // Update Charts (mock historical data for now)
+                const now = Date.now();
+                const labels = Array.from({ length: 24 }, (_, i) => {
+                    const d = new Date(now - (23 - i) * 3600000);
+                    return d.getHours() + ':00';
+                });
+                const cpuHistory = Array.from({ length: 24 }, () => Math.random() * 30 + 20);
+                const memHistory = Array.from({ length: 24 }, () => Math.random() * 20 + 40);
+                updateCharts(cpuHistory, memHistory, labels);
+
+                // Update Overview Agents Grid
+                document.getElementById('overviewAgentsGrid').innerHTML =
+                    renderAgentCard(homeAgent, true) + agents.map(a => renderAgentCard(a, true)).join('');
+
+                // Update Agents Grid
+                document.getElementById('agentsGrid').innerHTML =
+                    renderAgentCard(homeAgent) + agents.map(a => renderAgentCard(a)).join('');
+
+                // Update Queue Tables
+                document.getElementById('queueTable').innerHTML = renderQueueTable(queue.jobs || []);
+                document.getElementById('historyTable').innerHTML = renderHistoryTable(queue.history || []);
+                document.getElementById('queueCount').textContent = `${queue.pending || 0} in queue`;
+
+                // Fetch deployments for modal
+                try {
+                    const deployRes = await fetch('/api/deployments');
+                    const deployData = await deployRes.json();
+                    deployments = deployData.deployments || [];
+                } catch (e) {
+                    console.error('Failed to fetch deployments:', e);
+                    deployments = [];
+                }
+
+                // Update metadata
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+                document.getElementById('version').textContent = `v${homeHealth?.version || '0.1.0'}`;
+
+                updateConnectionStatus(true);
+            } catch (e) {
+                console.error('Refresh failed:', e);
+                updateConnectionStatus(false);
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            initCharts();
+            refreshAll();
+            refreshInterval = setInterval(refreshAll, 15000);
+        });
+
+        // Close sidebar on outside click (mobile)
+        document.addEventListener('click', (e) => {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && !e.target.closest('.mobile-menu-btn')) {
+                sidebar.classList.remove('open');
+            }
+        });
     </script>
 </body>
 </html>

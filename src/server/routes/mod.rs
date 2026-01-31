@@ -39,6 +39,8 @@ pub fn home() -> Router<Arc<AppState>> {
         .route("/api/metrics", get(api::get_metrics))
         .route("/api/deploys", get(api::get_deploy_history))
         .route("/api/suspicious", get(api::get_suspicious_requests))
+        // Deployments config
+        .route("/api/deployments", get(api::get_deployments))
 }
 
 async fn root() -> &'static str {

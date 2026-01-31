@@ -247,3 +247,27 @@ pub async fn get_all_agent_statuses(
         "count": statuses.len()
     })))
 }
+
+/// GET /api/deployments - Get configured deployments list
+pub async fn get_deployments(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    let deployments: Vec<_> = state
+        .config
+        .modules
+        .deploy
+        .deployments
+        .iter()
+        .map(|d| {
+            serde_json::json!({
+                "name": d.name,
+                "type": format!("{:?}", d.deploy_type),
+                "path": d.path,
+                "branch": d.branch,
+            })
+        })
+        .collect();
+
+    Json(serde_json::json!({
+        "deployments": deployments,
+        "count": deployments.len()
+    }))
+}

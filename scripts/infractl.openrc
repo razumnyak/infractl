@@ -1,0 +1,63 @@
+#!/sbin/openrc-run
+# OpenRC init script for infractl
+# Install to /etc/init.d/infractl
+
+name="infractl"
+description="Infrastructure monitoring and deployment agent"
+
+command="/usr/local/bin/infractl"
+command_args="--config /etc/infractl/config.yaml"
+command_background="yes"
+command_user="root"
+
+pidfile="/run/${name}.pid"
+output_log="/var/log/infractl/infractl.log"
+error_log="/var/log/infractl/infractl.log"
+
+depend() {
+    need net
+    after docker
+    use dns logger
+}
+
+start_pre() {
+    # Ensure directories exist
+    checkpath --directory --owner root:root --mode 0755 /var/lib/infractl
+    checkpath --directory --owner root:root --mode 0755 /var/log/infractl
+    checkpath --directory --owner root:root --mode 0755 /etc/infractl
+
+    # Verify config exists
+    if [ ! -f /etc/infractl/config.yaml ]; then
+        eerror "Config file /etc/infractl/config.yaml not found"
+        return 1
+    fi
+
+    # Verify binary exists
+    if [ ! -x "$command" ]; then
+        eerror "Binary $command not found or not executable"
+        return 1
+    fi
+}
+
+stop() {
+    ebegin "Stopping ${name}"
+    start-stop-daemon --stop --pidfile "${pidfile}" --signal TERM --retry 30
+    eend $?
+}
+
+reload() {
+    ebegin "Reloading ${name} configuration"
+    start-stop-daemon --signal HUP --pidfile "${pidfile}"
+    eend $?
+}
+
+status() {
+    if [ -f "${pidfile}" ]; then
+        if kill -0 "$(cat "${pidfile}")" 2>/dev/null; then
+            einfo "${name} is running"
+            return 0
+        fi
+    fi
+    einfo "${name} is not running"
+    return 3
+}

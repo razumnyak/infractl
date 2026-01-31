@@ -2,11 +2,16 @@
 # Optimized for minimal image size
 
 # =============================================================================
-# Stage 1: Build (if building from source)
+# Stage 1: Build
 # =============================================================================
 FROM rust:1.84-alpine AS builder
 
-RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconf
+RUN apk add --no-cache \
+    musl-dev \
+    openssl-dev \
+    openssl-libs-static \
+    pkgconf \
+    git
 
 WORKDIR /app
 
@@ -14,20 +19,18 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 
 # Create dummy main to build dependencies
-RUN mkdir src && \
+RUN mkdir -p src && \
     echo "fn main() {}" > src/main.rs && \
     cargo build --release && \
     rm -rf src
 
 # Copy actual source
 COPY src ./src
-COPY assets ./assets
-COPY build.rs ./
 
 # Build final binary
 RUN touch src/main.rs && \
-    cargo build --release --target x86_64-unknown-linux-musl && \
-    strip target/x86_64-unknown-linux-musl/release/infractl
+    cargo build --release && \
+    strip target/release/infractl
 
 # =============================================================================
 # Stage 2: Runtime (minimal)
@@ -38,6 +41,7 @@ FROM alpine:3.21
 LABEL org.opencontainers.image.title="infractl"
 LABEL org.opencontainers.image.description="Infrastructure monitoring and deployment agent"
 LABEL org.opencontainers.image.source="https://github.com/your-org/infractl"
+LABEL org.opencontainers.image.version="0.1.0"
 
 # Install runtime dependencies
 RUN apk add --no-cache \
@@ -46,36 +50,28 @@ RUN apk add --no-cache \
     docker-cli \
     docker-cli-compose \
     git \
-    openssh-client
+    openssh-client \
+    curl
 
-# Create non-root user
-RUN addgroup -S infractl && \
-    adduser -S -G infractl infractl && \
-    mkdir -p /var/lib/infractl /var/log/infractl /etc/infractl && \
-    chown -R infractl:infractl /var/lib/infractl /var/log/infractl /etc/infractl
+# Create directories
+RUN mkdir -p /var/lib/infractl /var/log/infractl /etc/infractl && \
+    chmod 755 /var/lib/infractl /var/log/infractl /etc/infractl
 
 # Copy binary from builder
-# Option A: From builder stage
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/infractl /usr/local/bin/
-
-# Option B: From pre-built artifact (uncomment if using CI artifacts)
-# COPY dist/infractl /usr/local/bin/
+COPY --from=builder /app/target/release/infractl /usr/local/bin/
 
 # Make executable
 RUN chmod +x /usr/local/bin/infractl
 
-# Default config
-COPY config/default.yaml /etc/infractl/config.yaml
+# Copy default config
+COPY scripts/docker-config.yaml /etc/infractl/config.yaml
 
 # Expose port
 EXPOSE 8111
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8111/health || exit 1
-
-# Run as non-root (comment out if Docker socket access needed as root)
-# USER infractl
+    CMD curl -sf http://localhost:8111/health || exit 1
 
 # Volumes
 VOLUME ["/var/lib/infractl", "/etc/infractl"]

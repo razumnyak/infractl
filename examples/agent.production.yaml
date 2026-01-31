@@ -1,0 +1,121 @@
+# Agent Mode - Production
+# Hardened config with full security and monitoring
+
+mode: agent
+
+auth:
+  jwt_secret: "${JWT_SECRET}"
+  webhook_secrets:
+    github: "${GITHUB_WEBHOOK_SECRET}"
+
+server:
+  bind: "0.0.0.0"
+  port: 8111
+  isolation_mode: true
+  allowed_networks:
+    - "10.0.0.0/8"      # Internal network only
+    - "127.0.0.1/32"
+
+updates:
+  enabled: true
+  self_update:
+    enabled: true
+    github_repo: "razumnyak/infractl"
+    check_interval: "6h"
+    prerelease: false
+  config_update:
+    enabled: true
+    github_raw_url: "https://raw.githubusercontent.com/your-org/infractl/main/agents/${HOSTNAME}.yaml"
+    check_interval: "1h"
+    backup: true
+
+modules:
+  metrics:
+    enabled: true
+    collect_interval: "30s"
+    docker_stats: true
+    compose_projects: true
+
+  storage:
+    enabled: false
+
+  deploy:
+    enabled: true
+    work_dir: "/opt/apps"
+    default_timeout: "300s"
+    deployments:
+      # Primary application
+      - name: "api"
+        type: git_pull
+        path: "/opt/apps/api"
+        branch: "main"
+        remote: "origin"
+        ssh_key: "/root/.ssh/deploy_key"
+        pre_deploy:
+          - "docker compose config --quiet"
+        post_deploy:
+          - "docker compose pull"
+          - "docker compose up -d --build"
+          - "docker image prune -f"
+        timeout: "600s"
+
+      # Frontend
+      - name: "frontend"
+        type: docker_pull
+        compose_file: "/opt/apps/frontend/docker-compose.yml"
+        services:
+          - "web"
+          - "nginx"
+        prune: true
+
+      # Backup job
+      - name: "backup"
+        type: custom_script
+        script: "/opt/scripts/backup.sh"
+        user: "backup"
+        env:
+          BACKUP_BUCKET: "${BACKUP_BUCKET}"
+        timeout: "3600s"
+
+  webhooks:
+    enabled: true
+    endpoints:
+      - path: "/webhook/github/api"
+        deployment: "api"
+        secret: "${GITHUB_WEBHOOK_SECRET}"
+        allowed_ips:
+          - "140.82.112.0/20"   # GitHub Actions
+          - "143.55.64.0/20"    # GitHub Actions
+
+      - path: "/webhook/github/frontend"
+        deployment: "frontend"
+        secret: "${GITHUB_WEBHOOK_SECRET}"
+        allowed_ips:
+          - "140.82.112.0/20"
+
+      - path: "/webhook/backup"
+        deployment: "backup"
+        secret: "${BACKUP_WEBHOOK_SECRET}"
+        schedule_constraint:
+          allowed_hours: [2, 3, 4, 5]  # Only 2-6 AM
+          timezone: "UTC"
+
+logging:
+  level: "info"
+  format: "json"
+  file: "/var/log/infractl/infractl.log"
+  suspicious_requests: "/var/log/infractl/suspicious.log"
+  rotation:
+    max_size: "50MB"
+    max_files: 5
+    compress: true
+
+notifications:
+  enabled: true
+  on_deploy:
+    success: false
+    failure: true
+  channels:
+    - type: slack
+      webhook_url: "${SLACK_WEBHOOK_URL}"
+      channel: "#alerts"

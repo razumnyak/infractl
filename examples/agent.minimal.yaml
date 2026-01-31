@@ -1,0 +1,22 @@
+# Agent Mode - Minimal (Development)
+# Quick start config for testing and development
+
+mode: agent
+
+auth:
+  jwt_secret: "dev-secret-change-in-production-32chars"
+
+server:
+  port: 8111
+  isolation_mode: false  # Allow all connections in dev
+
+modules:
+  metrics:
+    enabled: true
+    docker_stats: true
+
+  deploy:
+    enabled: false
+
+  storage:
+    enabled: false

@@ -1,6 +1,6 @@
 [Unit]
 Description=InfraCtl - Infrastructure Monitoring and Deployment Agent
-Documentation=https://github.com/your-org/infractl
+Documentation=https://github.com/razumnyak/infractl
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
@@ -16,7 +16,7 @@ ExecStart=/usr/local/bin/infractl --config /etc/infractl/config.yaml
 # Restart policy
 Restart=always
 RestartSec=5
-StartLimitInterval=60
+StartLimitIntervalSec=60
 StartLimitBurst=3
 
 # Environment
@@ -45,8 +45,8 @@ WorkingDirectory=/var/lib/infractl
 # Resource limits
 LimitNOFILE=65535
 LimitNPROC=4096
-MemoryMax=256M
-CPUQuota=50%
+MemoryMax=84M
+CPUQuota=10%
 
 # Logging
 StandardOutput=journal

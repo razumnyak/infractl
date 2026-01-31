@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Your Name <your.email@example.com>"]
 description = "Infrastructure monitoring and deployment agent"
 license = "MIT"
-repository = "https://github.com/your-org/infractl"
+repository = "https://github.com/razumnyak/infractl"
 keywords = ["infrastructure", "monitoring", "deployment", "devops"]
 categories = ["command-line-utilities", "web-programming"]
 
@@ -55,6 +55,9 @@ clap = { version = "4", features = ["derive", "env"] }
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
+time = "0.3.36"         # Pin to avoid edition2024
+time-core = "0.1.2"     # Pin to avoid edition2024
+time-macros = "0.2.18"  # Pin to avoid edition2024
 
 # Utilities
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -62,7 +65,7 @@ thiserror = "2"
 anyhow = "1"
 
 # Embedded assets
-rust-embed = { version = "8", features = ["compression"] }
+rust-embed = "8"
 mime_guess = "2"
 
 # Async traits

@@ -1,0 +1,48 @@
+# Agent Mode - Standard
+# Typical agent setup with deployments
+
+mode: agent
+
+auth:
+  jwt_secret: "${JWT_SECRET}"
+
+server:
+  bind: "0.0.0.0"
+  port: 8111
+  isolation_mode: true
+  allowed_networks:
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "192.168.0.0/16"
+    - "127.0.0.1/32"
+
+modules:
+  metrics:
+    enabled: true
+    collect_interval: "30s"
+    docker_stats: true
+    compose_projects: true
+
+  storage:
+    enabled: false
+
+  deploy:
+    enabled: true
+    work_dir: "/opt/apps"
+    default_timeout: "300s"
+    deployments:
+      - name: "myapp"
+        type: git_pull
+        path: "/opt/apps/myapp"
+        branch: "main"
+        post_deploy:
+          - "docker compose up -d --build"
+
+  webhooks:
+    enabled: true
+    endpoints: []
+
+logging:
+  level: "info"
+  format: "json"
+  file: "/var/log/infractl/infractl.log"

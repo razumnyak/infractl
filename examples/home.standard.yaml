@@ -1,0 +1,57 @@
+# Home Mode - Standard
+# Dashboard with multiple agents
+
+mode: home
+
+auth:
+  jwt_secret: "${JWT_SECRET}"
+
+server:
+  bind: "0.0.0.0"
+  port: 8111
+  isolation_mode: true
+  allowed_networks:
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "192.168.0.0/16"
+    - "127.0.0.1/32"
+
+agents:
+  - name: "web-1"
+    address: "http://10.0.0.10:8111"
+    timeout: "10s"
+    health_interval: "30s"
+
+  - name: "web-2"
+    address: "http://10.0.0.11:8111"
+
+  - name: "db-1"
+    address: "http://10.0.0.20:8111"
+
+modules:
+  metrics:
+    enabled: true
+    collect_interval: "30s"
+    docker_stats: true
+
+  storage:
+    enabled: true
+    db_path: "/var/lib/infractl/metrics.db"
+    retention:
+      raw_data: "7d"
+      hourly_data: "30d"
+      daily_data: "365d"
+    aggregation:
+      hourly: "0 * * * *"
+      daily: "0 0 * * *"
+
+  deploy:
+    enabled: false
+
+  webhooks:
+    enabled: false
+
+logging:
+  level: "info"
+  format: "json"
+  file: "/var/log/infractl/infractl.log"

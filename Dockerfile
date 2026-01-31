@@ -40,7 +40,7 @@ FROM alpine:3.21
 # Labels
 LABEL org.opencontainers.image.title="infractl"
 LABEL org.opencontainers.image.description="Infrastructure monitoring and deployment agent"
-LABEL org.opencontainers.image.source="https://github.com/your-org/infractl"
+LABEL org.opencontainers.image.source="https://github.com/razumnyak/infractl"
 LABEL org.opencontainers.image.version="0.1.0"
 
 # Install runtime dependencies

@@ -40,7 +40,7 @@ Infrastructure monitoring and deployment agent for self-hosted servers.
 ### Installation
 
 ```bash
-curl -fsSL https://github.com/your-org/infractl/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://github.com/razumnyak/infractl/releases/latest/download/install.sh | sudo bash
 ```
 
 Or with specific version and mode:
@@ -57,14 +57,14 @@ docker run -d \
   -p 8111:8111 \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -e JWT_SECRET=your-secret-here \
-  ghcr.io/your-org/infractl:latest
+  ghcr.io/razumnyak/infractl:latest
 ```
 
 ### Manual
 
 ```bash
 # Download binary
-wget https://github.com/your-org/infractl/releases/latest/download/infractl-x86_64-unknown-linux-musl
+wget https://github.com/razumnyak/infractl/releases/latest/download/infractl-x86_64-unknown-linux-musl
 
 # Install
 sudo mv infractl-* /usr/local/bin/infractl

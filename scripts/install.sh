@@ -1,12 +1,12 @@
 #!/bin/bash
 # infractl installation script
-# Usage: curl -fsSL https://raw.githubusercontent.com/your-org/infractl/main/scripts/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/razumnyak/infractl/main/scripts/install.sh | bash
 # Or: ./install.sh [--version v0.1.0] [--mode agent|home]
 
 set -euo pipefail
 
 # Configuration
-REPO="your-org/infractl"
+REPO="razumnyak/infractl"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/infractl"
 DATA_DIR="/var/lib/infractl"
@@ -242,7 +242,7 @@ install_systemd() {
     cat > /etc/systemd/system/infractl.service << 'EOF'
 [Unit]
 Description=InfraCtl - Infrastructure Monitoring and Deployment Agent
-Documentation=https://github.com/your-org/infractl
+Documentation=https://github.com/razumnyak/infractl
 After=network-online.target docker.service
 Wants=network-online.target
 

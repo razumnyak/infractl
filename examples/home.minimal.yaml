@@ -1,0 +1,34 @@
+# Home Mode - Minimal (Development)
+# Quick start config for testing dashboard
+
+mode: home
+
+auth:
+  jwt_secret: "dev-secret-change-in-production-32chars"
+
+server:
+  port: 8111
+  isolation_mode: false
+
+agents:
+  - name: "local"
+    address: "http://127.0.0.1:8112"
+
+modules:
+  metrics:
+    enabled: true
+
+  storage:
+    enabled: true
+    db_path: "/tmp/infractl-dev.db"
+    retention:
+      raw_data: "1d"
+      hourly_data: "7d"
+      daily_data: "30d"
+
+  deploy:
+    enabled: false
+
+logging:
+  level: "debug"
+  format: "pretty"

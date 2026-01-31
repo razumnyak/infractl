@@ -1,0 +1,131 @@
+# Home Mode - Production
+# Full monitoring hub with security hardening
+
+mode: home
+
+auth:
+  jwt_secret: "${JWT_SECRET}"
+  webhook_secrets:
+    github: "${GITHUB_WEBHOOK_SECRET}"
+
+server:
+  bind: "0.0.0.0"
+  port: 8111
+  isolation_mode: true
+  allowed_networks:
+    - "10.0.0.0/8"
+    - "127.0.0.1/32"
+
+updates:
+  enabled: true
+  self_update:
+    enabled: true
+    github_repo: "razumnyak/infractl"
+    check_interval: "12h"
+    prerelease: false
+
+# Production agent fleet
+agents:
+  # Web tier
+  - name: "web-1"
+    address: "http://10.0.1.10:8111"
+    timeout: "10s"
+    health_interval: "30s"
+
+  - name: "web-2"
+    address: "http://10.0.1.11:8111"
+    timeout: "10s"
+    health_interval: "30s"
+
+  - name: "web-3"
+    address: "http://10.0.1.12:8111"
+    timeout: "10s"
+    health_interval: "30s"
+
+  # API tier
+  - name: "api-1"
+    address: "http://10.0.2.10:8111"
+    timeout: "10s"
+    health_interval: "30s"
+
+  - name: "api-2"
+    address: "http://10.0.2.11:8111"
+    timeout: "10s"
+    health_interval: "30s"
+
+  # Database tier
+  - name: "db-primary"
+    address: "http://10.0.3.10:8111"
+    timeout: "15s"
+    health_interval: "60s"
+
+  - name: "db-replica"
+    address: "http://10.0.3.11:8111"
+    timeout: "15s"
+    health_interval: "60s"
+
+  # Workers
+  - name: "worker-1"
+    address: "http://10.0.4.10:8111"
+    health_interval: "60s"
+
+  - name: "worker-2"
+    address: "http://10.0.4.11:8111"
+    health_interval: "60s"
+
+modules:
+  metrics:
+    enabled: true
+    collect_interval: "30s"
+    docker_stats: true
+    compose_projects: true
+
+  storage:
+    enabled: true
+    db_path: "/var/lib/infractl/metrics.db"
+    retention:
+      raw_data: "14d"
+      hourly_data: "90d"
+      daily_data: "730d"  # 2 years
+    aggregation:
+      hourly: "5 * * * *"    # 5 minutes past hour
+      daily: "0 1 * * *"     # 1 AM
+
+  deploy:
+    enabled: false  # Home server doesn't deploy locally
+
+  webhooks:
+    enabled: true
+    endpoints:
+      # Receive GitHub webhooks and forward to agents
+      - path: "/webhook/github/deploy-all"
+        event: "push"
+        secret: "${GITHUB_WEBHOOK_SECRET}"
+        allowed_ips:
+          - "140.82.112.0/20"
+          - "143.55.64.0/20"
+
+logging:
+  level: "info"
+  format: "json"
+  file: "/var/log/infractl/infractl.log"
+  suspicious_requests: "/var/log/infractl/suspicious.log"
+  rotation:
+    max_size: "100MB"
+    max_files: 10
+    compress: true
+
+notifications:
+  enabled: true
+  on_deploy:
+    success: true
+    failure: true
+  channels:
+    - type: slack
+      webhook_url: "${SLACK_WEBHOOK_URL}"
+      channel: "#monitoring"
+
+    - type: telegram
+      url: "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage"
+      headers:
+        Content-Type: "application/json"

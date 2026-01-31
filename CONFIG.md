@@ -84,12 +84,12 @@ updates:
   enabled: true
   self_update:
     enabled: true
-    github_repo: "your-org/infractl"
+    github_repo: "razumnyak/infractl"
     check_interval: "6h"
     prerelease: false
   config_update:
     enabled: false
-    github_raw_url: "https://raw.githubusercontent.com/your-org/configs/main/infractl.yaml"
+    github_raw_url: "https://raw.githubusercontent.com/razumnyak/infractl/main/infractl.yaml"
     check_interval: "1h"
     backup: true
 ```
@@ -398,6 +398,15 @@ auth:
   jwt_secret: "your-secret-min-32-characters-long"
 ```
 
-### Full Home Server
+### Examples
 
-See [docs/Config.example](docs/Config.example) for a complete example.
+See [examples/](examples/) for complete configurations:
+
+| File | Mode | Use Case |
+|------|------|----------|
+| `agent.minimal.yaml` | Agent | Development/testing |
+| `agent.standard.yaml` | Agent | Typical setup with deploys |
+| `agent.production.yaml` | Agent | Hardened with full security |
+| `home.minimal.yaml` | Home | Development/testing |
+| `home.standard.yaml` | Home | Multi-agent monitoring |
+| `home.production.yaml` | Home | Full fleet with alerting |

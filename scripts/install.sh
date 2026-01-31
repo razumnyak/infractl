@@ -2,8 +2,16 @@
 # infractl installation script
 # Usage: curl -fsSL https://raw.githubusercontent.com/razumnyak/infractl/main/scripts/install.sh | bash
 # Or: ./install.sh [--version v0.1.0] [--mode agent|home]
+#
+# Alpine Linux: apk add bash curl before running
 
 set -euo pipefail
+
+# Check bash is available
+if [ -z "${BASH_VERSION:-}" ]; then
+    echo "Error: This script requires bash. On Alpine: apk add bash"
+    exit 1
+fi
 
 # Configuration
 REPO="razumnyak/infractl"
@@ -88,7 +96,8 @@ detect_init_system() {
 
 # Get latest version from GitHub
 get_latest_version() {
-    curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep -Po '"tag_name": "\K[^"]*'
+    curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | \
+        sed -n 's/.*"tag_name": "\([^"]*\)".*/\1/p' | head -1
 }
 
 # Download binary
@@ -239,40 +248,13 @@ EOF
 install_systemd() {
     log_info "Installing systemd service..."
 
-    cat > /etc/systemd/system/infractl.service << 'EOF'
-[Unit]
-Description=InfraCtl - Infrastructure Monitoring and Deployment Agent
-Documentation=https://github.com/razumnyak/infractl
-After=network-online.target docker.service
-Wants=network-online.target
+    local service_url="https://raw.githubusercontent.com/${REPO}/main/infractl.service"
 
-[Service]
-Type=simple
-User=root
-Group=root
-ExecStart=/usr/local/bin/infractl --config /etc/infractl/config.yaml
-Restart=always
-RestartSec=5
-EnvironmentFile=-/etc/infractl/env
-Environment=RUST_LOG=info
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
-ReadWritePaths=/var/lib/infractl /var/log/infractl /var/run/docker.sock
-WorkingDirectory=/var/lib/infractl
-LimitNOFILE=65535
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=infractl
-TimeoutStopSec=30
-KillMode=mixed
-KillSignal=SIGTERM
-ExecReload=/bin/kill -HUP $MAINPID
-
-[Install]
-WantedBy=multi-user.target
-EOF
+    if command -v curl &>/dev/null; then
+        curl -fsSL -o /etc/systemd/system/infractl.service "$service_url"
+    elif command -v wget &>/dev/null; then
+        wget -q -O /etc/systemd/system/infractl.service "$service_url"
+    fi
 
     systemctl daemon-reload
     systemctl enable infractl
@@ -282,29 +264,13 @@ EOF
 install_openrc() {
     log_info "Installing OpenRC service..."
 
-    cat > /etc/init.d/infractl << 'EOF'
-#!/sbin/openrc-run
+    local service_url="https://raw.githubusercontent.com/${REPO}/main/infractl.openrc"
 
-name="infractl"
-description="Infrastructure monitoring and deployment agent"
-command="/usr/local/bin/infractl"
-command_args="--config /etc/infractl/config.yaml"
-command_background="yes"
-command_user="root"
-pidfile="/run/${name}.pid"
-output_log="/var/log/infractl/infractl.log"
-error_log="/var/log/infractl/infractl.log"
-
-depend() {
-    need net
-    after docker
-}
-
-start_pre() {
-    checkpath --directory --owner root:root --mode 0755 /var/lib/infractl
-    checkpath --directory --owner root:root --mode 0755 /var/log/infractl
-}
-EOF
+    if command -v curl &>/dev/null; then
+        curl -fsSL -o /etc/init.d/infractl "$service_url"
+    elif command -v wget &>/dev/null; then
+        wget -q -O /etc/init.d/infractl "$service_url"
+    fi
 
     chmod +x /etc/init.d/infractl
     rc-update add infractl default

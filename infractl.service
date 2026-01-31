@@ -1,0 +1,65 @@
+[Unit]
+Description=InfraCtl - Infrastructure Monitoring and Deployment Agent
+Documentation=https://github.com/your-org/infractl
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# Binary location
+ExecStart=/usr/local/bin/infractl --config /etc/infractl/config.yaml
+
+# Restart policy
+Restart=always
+RestartSec=5
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Environment
+EnvironmentFile=-/etc/infractl/env
+Environment=RUST_LOG=info
+Environment=RUST_BACKTRACE=1
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Read-write paths
+ReadWritePaths=/var/lib/infractl /var/log/infractl
+
+# Allow Docker socket access
+ReadWritePaths=/var/run/docker.sock
+
+# Working directory
+WorkingDirectory=/var/lib/infractl
+
+# Resource limits
+LimitNOFILE=65535
+LimitNPROC=4096
+MemoryMax=256M
+CPUQuota=50%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=infractl
+
+# Graceful shutdown
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Reload config on SIGHUP
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target

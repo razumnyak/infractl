@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>infractl - Monitoring Dashboard</title>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-card: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent: #3b82f6;
+            --success: #22c55e;
+            --warning: #eab308;
+            --danger: #ef4444;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        .header {
+            background: var(--bg-secondary);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--bg-card);
+        }
+        .header h1 { font-size: 1.5rem; font-weight: 600; }
+        .header .version { color: var(--text-secondary); font-size: 0.875rem; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; }
+        .card {
+            background: var(--bg-secondary);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            border: 1px solid var(--bg-card);
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .card-title { font-size: 1.125rem; font-weight: 600; }
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .status-healthy { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+        .status-warning { background: rgba(234, 179, 8, 0.2); color: var(--warning); }
+        .status-error { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+        .status-unknown { background: rgba(148, 163, 184, 0.2); color: var(--text-secondary); }
+        .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 1rem; }
+        .metric {
+            background: var(--bg-card);
+            padding: 1rem;
+            border-radius: 0.5rem;
+        }
+        .metric-label { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.25rem; }
+        .metric-value { font-size: 1.25rem; font-weight: 600; }
+        .progress-bar {
+            height: 6px;
+            background: var(--bg-primary);
+            border-radius: 3px;
+            margin-top: 0.5rem;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+        .progress-low { background: var(--success); }
+        .progress-medium { background: var(--warning); }
+        .progress-high { background: var(--danger); }
+        .refresh-btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+        .refresh-btn:hover { opacity: 0.9; }
+        .last-updated { color: var(--text-secondary); font-size: 0.75rem; }
+        .loading { opacity: 0.5; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .loading .card { animation: pulse 1.5s infinite; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div>
+            <h1>infractl</h1>
+            <span class="version" id="version">v0.1.0</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <span class="last-updated">Last updated: <span id="lastUpdate">-</span></span>
+            <button class="refresh-btn" onclick="refreshAll()">Refresh</button>
+        </div>
+    </header>
+    <main class="container">
+        <div class="grid" id="agentsGrid">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Loading...</span>
+                    <span class="status-badge status-unknown">Unknown</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const API_BASE = '';
+        let agents = [];
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        function getProgressClass(percent) {
+            if (percent < 60) return 'progress-low';
+            if (percent < 85) return 'progress-medium';
+            return 'progress-high';
+        }
+
+        function getStatusClass(status) {
+            switch (status) {
+                case 'healthy': return 'status-healthy';
+                case 'warning': return 'status-warning';
+                case 'error': return 'status-error';
+                default: return 'status-unknown';
+            }
+        }
+
+        function renderAgent(agent) {
+            const status = agent.status || 'unknown';
+            const health = agent.health || {};
+            const sys = health.system || {};
+
+            return `
+                <div class="card" data-agent="${agent.name}">
+                    <div class="card-header">
+                        <span class="card-title">${agent.name}</span>
+                        <span class="status-badge ${getStatusClass(status)}">${status}</span>
+                    </div>
+                    <div style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1rem;">
+                        ${agent.address}
+                    </div>
+                    ${health.status ? `
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-label">CPU Usage</div>
+                            <div class="metric-value">${(sys.cpu_usage || 0).toFixed(1)}%</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill ${getProgressClass(sys.cpu_usage || 0)}"
+                                     style="width: ${sys.cpu_usage || 0}%"></div>
+                            </div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">Memory</div>
+                            <div class="metric-value">${(sys.memory_usage_percent || 0).toFixed(1)}%</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill ${getProgressClass(sys.memory_usage_percent || 0)}"
+                                     style="width: ${sys.memory_usage_percent || 0}%"></div>
+                            </div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">Load (1m)</div>
+                            <div class="metric-value">${(sys.load_avg?.one || 0).toFixed(2)}</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">Uptime</div>
+                            <div class="metric-value">${formatUptime(health.uptime_seconds || 0)}</div>
+                        </div>
+                    </div>
+                    ` : `
+                    <div style="color: var(--text-secondary); text-align: center; padding: 2rem;">
+                        No data available
+                    </div>
+                    `}
+                </div>
+            `;
+        }
+
+        function formatUptime(seconds) {
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            if (days > 0) return `${days}d ${hours}h`;
+            if (hours > 0) return `${hours}h ${mins}m`;
+            return `${mins}m`;
+        }
+
+        async function fetchAgents() {
+            try {
+                const res = await fetch(`${API_BASE}/api/agents`);
+                const data = await res.json();
+                return data.agents || [];
+            } catch (e) {
+                console.error('Failed to fetch agents:', e);
+                return [];
+            }
+        }
+
+        async function fetchHealth() {
+            try {
+                const res = await fetch(`${API_BASE}/health`);
+                return await res.json();
+            } catch (e) {
+                console.error('Failed to fetch health:', e);
+                return null;
+            }
+        }
+
+        async function refreshAll() {
+            document.body.classList.add('loading');
+
+            // Fetch local health for Home node
+            const homeHealth = await fetchHealth();
+
+            // Fetch agents list
+            agents = await fetchAgents();
+
+            // Add Home node as first card
+            const homeAgent = {
+                name: 'Home (this)',
+                address: 'localhost',
+                status: homeHealth ? 'healthy' : 'error',
+                health: homeHealth
+            };
+
+            const grid = document.getElementById('agentsGrid');
+            grid.innerHTML = renderAgent(homeAgent) + agents.map(a => renderAgent(a)).join('');
+
+            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+            document.getElementById('version').textContent = `v${homeHealth?.version || '0.1.0'}`;
+
+            document.body.classList.remove('loading');
+        }
+
+        // Initial load
+        refreshAll();
+
+        // Auto-refresh every 30 seconds
+        setInterval(refreshAll, 30000);
+    </script>
+</body>
+</html>

@@ -87,8 +87,8 @@ pub async fn jwt_auth(
 ) -> Response {
     let path = request.uri().path();
 
-    // Skip auth for health checks and root
-    if path == "/health" || path == "/" {
+    // Skip auth for health checks, root, and monitoring dashboard
+    if path == "/health" || path == "/" || path == "/monitoring" {
         return next.run(request).await;
     }
 

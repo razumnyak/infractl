@@ -46,6 +46,9 @@ bollard = { version = "0.17", optional = true }
 # Git (optional)
 git2 = { version = "0.19", optional = true }
 
+# Vendored OpenSSL for cross-compilation
+openssl = { version = "0.10", features = ["vendored"] }
+
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

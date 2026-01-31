@@ -12,14 +12,15 @@ use crate::config::{Config, Mode};
 use crate::deploy::{self, DeployExecutor};
 use crate::storage::aggregation;
 use crate::storage::{self, parse_retention_days};
+use crate::updater::{self, Updater};
 use anyhow::Result;
 use axum::{middleware as axum_mw, Router};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tracing::info;
+use tracing::{info, warn};
 
-pub async fn run(config: Config, _cli: Cli) -> Result<()> {
+pub async fn run(config: Config, cli: Cli) -> Result<()> {
     // Initialize database for Home mode
     let state = if config.mode == Mode::Home && config.modules.storage.enabled {
         let db = storage::init(&config).await?;
@@ -61,6 +62,45 @@ pub async fn run(config: Config, _cli: Cli) -> Result<()> {
             });
 
             info!("Deployment worker started");
+        }
+    }
+
+    // Start auto-updater if enabled
+    if config.updates.enabled {
+        let config_path = cli.config.to_str().unwrap_or("/etc/infractl/config.yaml");
+        let update_config = config.updates.clone();
+        let updater_instance = Arc::new(Updater::new(&update_config, config_path));
+
+        // Start self-update checker
+        if update_config.self_update.enabled {
+            match updater::parse_duration(&update_config.self_update.check_interval) {
+                Ok(interval) => {
+                    let updater_clone = updater_instance.clone();
+                    tokio::spawn(updater::start_update_checker(
+                        updater_clone,
+                        interval,
+                        false,
+                    ));
+                    info!("Self-update checker started");
+                }
+                Err(e) => {
+                    warn!(error = %e, "Invalid self-update check interval");
+                }
+            }
+        }
+
+        // Start config sync checker
+        if update_config.config_update.enabled {
+            match updater::parse_duration(&update_config.config_update.check_interval) {
+                Ok(interval) => {
+                    let updater_clone = updater_instance.clone();
+                    tokio::spawn(updater::start_config_sync(updater_clone, interval));
+                    info!("Config sync checker started");
+                }
+                Err(e) => {
+                    warn!(error = %e, "Invalid config sync check interval");
+                }
+            }
         }
     }
 

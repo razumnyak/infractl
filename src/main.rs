@@ -6,6 +6,7 @@ mod logging;
 mod metrics;
 mod server;
 mod storage;
+mod updater;
 
 use anyhow::Result;
 use tracing::info;

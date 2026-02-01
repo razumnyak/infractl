@@ -1,34 +1,71 @@
 #!/bin/bash
 set -euo pipefail
 
-VERSION="${1:?Usage: ./scripts/release.sh 0.1.4}"
+PROD=false
+CURRENT=""
+TARGET=""
 
-echo "Releasing v$VERSION..."
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --prod)
+            PROD=true
+            shift
+            ;;
+        *)
+            if [[ -z "$CURRENT" ]]; then
+                CURRENT="$1"
+            elif [[ -z "$TARGET" ]]; then
+                TARGET="$1"
+            fi
+            shift
+            ;;
+    esac
+done
 
-# Detect OS for sed compatibility
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    SED="sed -i ''"
-else
-    SED="sed -i"
+if [[ -z "$CURRENT" || -z "$TARGET" ]]; then
+    echo "Usage: ./scripts/release.sh <current> <target> [--prod]"
+    echo "Example: ./scripts/release.sh 0.1.3 0.1.4 --prod"
+    echo ""
+    echo "  --prod  Push to git remote (tag + main branch)"
+    exit 1
 fi
 
+echo "Releasing v$CURRENT -> v$TARGET..."
+
+# Detect OS for sed compatibility
+sedi() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "$@"
+    else
+        sed -i "$@"
+    fi
+}
+
 # Cargo.toml
-$SED "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+sedi "s/^version = \"$CURRENT\"/version = \"$TARGET\"/" Cargo.toml
 
 # README.md
-$SED "s/v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/v$VERSION/g" README.md
+sedi "s/v$CURRENT/v$TARGET/g" README.md
 
 # DEPLOY.md
-$SED "s/v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/v$VERSION/g" DEPLOY.md
+sedi "s/v$CURRENT/v$TARGET/g" DEPLOY.md
 
 # dashboard.html
-$SED "s/>v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*</>v$VERSION</g" src/assets/dashboard.html
+sedi "s/>v$CURRENT</>v$TARGET</g" src/assets/dashboard.html
 
-# Коммит и тег
+# install.sh (example in comment)
+sedi "s/v$CURRENT/v$TARGET/g" scripts/install.sh
+
+# Commit and tag
 git add -A
-git commit -m "Release v$VERSION"
-git tag "v$VERSION"
-git push origin main
-git push origin "v$VERSION"
+git commit -m "Release v$TARGET"
+git tag "v$TARGET"
 
-echo "Released v$VERSION"
+if [[ "$PROD" == "true" ]]; then
+    git push origin main
+    git push origin "v$TARGET"
+    echo "Released v$TARGET (pushed to remote)"
+else
+    echo "Released v$TARGET (local only, use --prod to push)"
+fi

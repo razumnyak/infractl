@@ -82,6 +82,21 @@ pub enum Commands {
         #[arg(short, long)]
         target: Option<String>,
     },
+
+    /// Update infractl to the latest version
+    SelfUpdate {
+        /// Force update even if already on latest version
+        #[arg(short, long)]
+        force: bool,
+
+        /// GitHub repository (default: from config or razumnyak/infractl)
+        #[arg(short, long)]
+        repo: Option<String>,
+
+        /// Include pre-release versions
+        #[arg(long)]
+        prerelease: bool,
+    },
 }
 
 pub fn parse() -> Cli {

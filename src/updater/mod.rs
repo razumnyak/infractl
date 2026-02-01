@@ -334,6 +334,86 @@ pub async fn start_config_sync(updater: Arc<Updater>, check_interval: std::time:
     }
 }
 
+/// Standalone self-update (for CLI command)
+pub async fn self_update_standalone(
+    repo: &str,
+    force: bool,
+    prerelease: bool,
+) -> Result<binary::UpdateResult, String> {
+    let client = GitHubClient::new(repo);
+    let updater = BinaryUpdater::new()?;
+
+    info!("Checking for updates from {}...", repo);
+
+    // Get latest release
+    let release = client.get_latest_release(prerelease).await?;
+
+    let current_version = env!("CARGO_PKG_VERSION");
+    let remote_version = release.tag_name.clone();
+
+    info!(
+        "Current version: v{}, Latest: {}",
+        current_version, remote_version
+    );
+
+    // Check if update is needed (unless force)
+    if !force && !is_newer_version(current_version, &remote_version)? {
+        return Ok(binary::UpdateResult {
+            success: true,
+            from_version: current_version.to_string(),
+            to_version: remote_version,
+            message: "Already up to date".to_string(),
+            requires_restart: false,
+        });
+    }
+
+    if force {
+        info!("Force update requested");
+    }
+
+    // Find binary asset
+    let asset = release.find_binary_asset().ok_or_else(|| {
+        format!(
+            "No compatible binary found for {}",
+            github::get_target_triple()
+        )
+    })?;
+
+    info!("Downloading {} ({} bytes)...", asset.name, asset.size);
+
+    // Download binary
+    let binary_data = client.download_asset(asset).await?;
+
+    // Try to get checksum
+    let checksum_result = client.download_checksum(&release).await;
+
+    // Handle compressed archives
+    let final_binary = if asset.name.ends_with(".tar.gz") {
+        binary::extract_from_tarball(&binary_data, "infractl")?
+    } else if asset.name.ends_with(".zip") {
+        return Err("ZIP archives not yet supported".to_string());
+    } else {
+        binary_data
+    };
+
+    // Verify checksum if available
+    if let Ok(checksums) = checksum_result {
+        if let Some(expected) = github::parse_checksum(&checksums, &asset.name) {
+            BinaryUpdater::verify_checksum(&final_binary, &expected)?;
+            info!("Checksum verified");
+        } else {
+            warn!("Checksum file found but no entry for {}", asset.name);
+        }
+    } else {
+        warn!("No checksum file, skipping verification");
+    }
+
+    // Perform update
+    let result = updater.replace_binary(&final_binary, current_version, &remote_version)?;
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

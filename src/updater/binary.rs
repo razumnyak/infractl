@@ -86,13 +86,16 @@ impl BinaryUpdater {
         let now = time::OffsetDateTime::now_utc();
         let timestamp = format!(
             "{:04}{:02}{:02}{:02}{:02}{:02}",
-            now.year(), now.month() as u8, now.day(), now.hour(), now.minute(), now.second()
+            now.year(),
+            now.month() as u8,
+            now.day(),
+            now.hour(),
+            now.minute(),
+            now.second()
         );
-        let backup_path = self.backup_dir.join(format!(
-            "infractl-{}-{}",
-            from_version,
-            timestamp
-        ));
+        let backup_path = self
+            .backup_dir
+            .join(format!("infractl-{}-{}", from_version, timestamp));
 
         fs::copy(&self.current_exe, &backup_path)
             .map_err(|e| format!("Failed to backup current binary: {}", e))?;

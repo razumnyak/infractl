@@ -193,7 +193,12 @@ impl ConfigSync {
         let now = time::OffsetDateTime::now_utc();
         let timestamp = format!(
             "{:04}{:02}{:02}{:02}{:02}{:02}",
-            now.year(), now.month() as u8, now.day(), now.hour(), now.minute(), now.second()
+            now.year(),
+            now.month() as u8,
+            now.day(),
+            now.hour(),
+            now.minute(),
+            now.second()
         );
         let backup_path = self.backup_dir.join(format!("config-{}.yaml", timestamp));
 

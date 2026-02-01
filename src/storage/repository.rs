@@ -274,9 +274,7 @@ impl Database {
                 .parse()
                 .unwrap_or(DeployStatus::Pending),
             started_at: parse_rfc3339(&row.get::<_, String>(5)?),
-            completed_at: row
-                .get::<_, Option<String>>(6)?
-                .map(|s| parse_rfc3339(&s)),
+            completed_at: row.get::<_, Option<String>>(6)?.map(|s| parse_rfc3339(&s)),
             duration_ms: row.get(7)?,
             trigger_source: row.get(8)?,
             commit_sha: row.get(9)?,

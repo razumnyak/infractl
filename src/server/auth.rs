@@ -1,6 +1,6 @@
-use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
+use time::{Duration, OffsetDateTime};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
@@ -17,17 +17,17 @@ pub struct Claims {
 impl Claims {
     #[allow(dead_code)]
     pub fn new(subject: &str, ttl_hours: i64) -> Self {
-        let now = Utc::now();
+        let now = OffsetDateTime::now_utc();
         Self {
             sub: subject.to_string(),
-            exp: (now + Duration::hours(ttl_hours)).timestamp(),
-            iat: now.timestamp(),
+            exp: (now + Duration::hours(ttl_hours)).unix_timestamp(),
+            iat: now.unix_timestamp(),
             iss: "infractl".to_string(),
         }
     }
 
     pub fn is_expired(&self) -> bool {
-        Utc::now().timestamp() > self.exp
+        OffsetDateTime::now_utc().unix_timestamp() > self.exp
     }
 }
 

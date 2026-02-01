@@ -189,4 +189,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@cargo-audit
       - name: Run audit
-        run: cargo audit --ignore RUSTSEC-2020-0071 || true
+        run: cargo audit

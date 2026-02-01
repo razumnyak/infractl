@@ -6,9 +6,10 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 
 #[derive(Deserialize)]
 pub struct MetricsQueryParams {
@@ -49,14 +50,12 @@ pub async fn get_metrics(
     let from = params
         .from
         .as_ref()
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&Utc));
+        .and_then(|s| OffsetDateTime::parse(s, &Rfc3339).ok());
 
     let to = params
         .to
         .as_ref()
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&Utc));
+        .and_then(|s| OffsetDateTime::parse(s, &Rfc3339).ok());
 
     let aggregation = params
         .aggregation_type

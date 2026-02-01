@@ -190,7 +190,11 @@ impl ConfigSync {
         fs::create_dir_all(&self.backup_dir)
             .map_err(|e| format!("Failed to create backup directory: {}", e))?;
 
-        let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S");
+        let now = time::OffsetDateTime::now_utc();
+        let timestamp = format!(
+            "{:04}{:02}{:02}{:02}{:02}{:02}",
+            now.year(), now.month() as u8, now.day(), now.hour(), now.minute(), now.second()
+        );
         let backup_path = self.backup_dir.join(format!("config-{}.yaml", timestamp));
 
         fs::copy(&self.config_path, &backup_path)

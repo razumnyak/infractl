@@ -1,8 +1,17 @@
 use super::migrations;
 use super::models::*;
-use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::sync::Mutex;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
+
+fn parse_rfc3339(s: &str) -> OffsetDateTime {
+    OffsetDateTime::parse(s, &Rfc3339).unwrap_or_else(|_| OffsetDateTime::now_utc())
+}
+
+fn format_rfc3339(dt: OffsetDateTime) -> String {
+    dt.format(&Rfc3339).unwrap_or_else(|_| String::new())
+}
 
 pub struct Database {
     pub(crate) conn: Mutex<Connection>,
@@ -45,7 +54,7 @@ impl Database {
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 metric.agent_name,
-                metric.collected_at.to_rfc3339(),
+                format_rfc3339(metric.collected_at),
                 metric.cpu_usage,
                 metric.memory_usage_percent,
                 metric.memory_used as i64,
@@ -80,11 +89,11 @@ impl Database {
         }
         if let Some(from) = &query.from {
             sql.push_str(" AND collected_at >= ?");
-            params_vec.push(Box::new(from.to_rfc3339()));
+            params_vec.push(Box::new(format_rfc3339(*from)));
         }
         if let Some(to) = &query.to {
             sql.push_str(" AND collected_at <= ?");
-            params_vec.push(Box::new(to.to_rfc3339()));
+            params_vec.push(Box::new(format_rfc3339(*to)));
         }
 
         sql.push_str(" ORDER BY collected_at DESC");
@@ -101,9 +110,7 @@ impl Database {
             Ok(MetricRecord {
                 id: Some(row.get(0)?),
                 agent_name: row.get(1)?,
-                collected_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
+                collected_at: parse_rfc3339(&row.get::<_, String>(2)?),
                 cpu_usage: row.get(3)?,
                 memory_usage_percent: row.get(4)?,
                 memory_used: row.get::<_, i64>(5)? as u64,
@@ -124,8 +131,8 @@ impl Database {
     pub fn get_hourly_metrics(
         &self,
         agent_name: &str,
-        from: Option<DateTime<Utc>>,
-        to: Option<DateTime<Utc>>,
+        from: Option<OffsetDateTime>,
+        to: Option<OffsetDateTime>,
     ) -> rusqlite::Result<Vec<AggregatedMetric>> {
         let conn = self.conn.lock().unwrap();
 
@@ -140,11 +147,11 @@ impl Database {
 
         if let Some(from) = from {
             sql.push_str(" AND hour_start >= ?");
-            params_vec.push(Box::new(from.to_rfc3339()));
+            params_vec.push(Box::new(format_rfc3339(from)));
         }
         if let Some(to) = to {
             sql.push_str(" AND hour_start <= ?");
-            params_vec.push(Box::new(to.to_rfc3339()));
+            params_vec.push(Box::new(format_rfc3339(to)));
         }
 
         sql.push_str(" ORDER BY hour_start DESC");
@@ -157,9 +164,7 @@ impl Database {
             Ok(AggregatedMetric {
                 id: Some(row.get(0)?),
                 agent_name: row.get(1)?,
-                period_start: DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
+                period_start: parse_rfc3339(&row.get::<_, String>(2)?),
                 cpu_avg: row.get(3)?,
                 cpu_max: row.get(4)?,
                 memory_avg: row.get(5)?,
@@ -190,8 +195,8 @@ impl Database {
                 deploy.deployment_name,
                 deploy.deploy_type,
                 deploy.status.to_string(),
-                deploy.started_at.to_rfc3339(),
-                deploy.completed_at.map(|dt| dt.to_rfc3339()),
+                format_rfc3339(deploy.started_at),
+                deploy.completed_at.map(format_rfc3339),
                 deploy.duration_ms,
                 deploy.trigger_source,
                 deploy.commit_sha,
@@ -207,7 +212,7 @@ impl Database {
         &self,
         id: i64,
         status: DeployStatus,
-        completed_at: Option<DateTime<Utc>>,
+        completed_at: Option<OffsetDateTime>,
         duration_ms: Option<i64>,
         output: Option<&str>,
         error_message: Option<&str>,
@@ -219,7 +224,7 @@ impl Database {
              WHERE id = ?6",
             params![
                 status.to_string(),
-                completed_at.map(|dt| dt.to_rfc3339()),
+                completed_at.map(format_rfc3339),
                 duration_ms,
                 output,
                 error_message,
@@ -268,13 +273,10 @@ impl Database {
                 .get::<_, String>(4)?
                 .parse()
                 .unwrap_or(DeployStatus::Pending),
-            started_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
-                .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
+            started_at: parse_rfc3339(&row.get::<_, String>(5)?),
             completed_at: row
                 .get::<_, Option<String>>(6)?
-                .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
-                .map(|dt| dt.with_timezone(&Utc)),
+                .map(|s| parse_rfc3339(&s)),
             duration_ms: row.get(7)?,
             trigger_source: row.get(8)?,
             commit_sha: row.get(9)?,
@@ -295,7 +297,7 @@ impl Database {
                 recorded_at, source_ip, method, path, reason, user_agent, headers
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
-                req.recorded_at.to_rfc3339(),
+                format_rfc3339(req.recorded_at),
                 req.source_ip,
                 req.method,
                 req.path,
@@ -317,9 +319,7 @@ impl Database {
         let rows = stmt.query_map(params![limit], |row| {
             Ok(SuspiciousRequest {
                 id: Some(row.get(0)?),
-                recorded_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(1)?)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
+                recorded_at: parse_rfc3339(&row.get::<_, String>(1)?),
                 source_ip: row.get(2)?,
                 method: row.get(3)?,
                 path: row.get(4)?,
@@ -346,7 +346,7 @@ impl Database {
                 last_seen = ?2, status = ?3, version = ?4, uptime_seconds = ?5",
             params![
                 status.agent_name,
-                status.last_seen.to_rfc3339(),
+                format_rfc3339(status.last_seen),
                 status.status,
                 status.version,
                 status.uptime_seconds.map(|u| u as i64),
@@ -364,9 +364,7 @@ impl Database {
             |row| {
                 Ok(AgentStatus {
                     agent_name: row.get(0)?,
-                    last_seen: DateTime::parse_from_rfc3339(&row.get::<_, String>(1)?)
-                        .map(|dt| dt.with_timezone(&Utc))
-                        .unwrap_or_else(|_| Utc::now()),
+                    last_seen: parse_rfc3339(&row.get::<_, String>(1)?),
                     status: row.get(2)?,
                     version: row.get(3)?,
                     uptime_seconds: row.get::<_, Option<i64>>(4)?.map(|u| u as u64),
@@ -386,9 +384,7 @@ impl Database {
         let rows = stmt.query_map([], |row| {
             Ok(AgentStatus {
                 agent_name: row.get(0)?,
-                last_seen: DateTime::parse_from_rfc3339(&row.get::<_, String>(1)?)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
+                last_seen: parse_rfc3339(&row.get::<_, String>(1)?),
                 status: row.get(2)?,
                 version: row.get(3)?,
                 uptime_seconds: row.get::<_, Option<i64>>(4)?.map(|u| u as u64),

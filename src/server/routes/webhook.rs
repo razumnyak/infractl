@@ -11,9 +11,15 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::sync::Arc;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 use tracing::{info, warn};
 
 type HmacSha256 = Hmac<Sha256>;
+
+fn format_rfc3339(dt: OffsetDateTime) -> String {
+    dt.format(&Rfc3339).unwrap_or_default()
+}
 
 #[derive(Serialize)]
 pub struct WebhookResponse {
@@ -127,9 +133,9 @@ pub async fn get_job_status(
         "deployment": job.deployment_name,
         "agent": job.agent_name,
         "status": format!("{:?}", job.status),
-        "created_at": job.created_at.to_rfc3339(),
-        "started_at": job.started_at.map(|t| t.to_rfc3339()),
-        "completed_at": job.completed_at.map(|t| t.to_rfc3339()),
+        "created_at": format_rfc3339(job.created_at),
+        "started_at": job.started_at.map(format_rfc3339),
+        "completed_at": job.completed_at.map(format_rfc3339),
         "trigger_source": job.trigger_source,
     })))
 }
@@ -154,14 +160,14 @@ pub async fn get_queue_status(
             "id": j.id,
             "deployment": j.deployment_name,
             "status": format!("{:?}", j.status),
-            "created_at": j.created_at.to_rfc3339(),
+            "created_at": format_rfc3339(j.created_at),
         })).collect::<Vec<_>>(),
         "history": history.iter().map(|j| serde_json::json!({
             "id": j.id,
             "deployment": j.deployment_name,
             "status": format!("{:?}", j.status),
-            "created_at": j.created_at.to_rfc3339(),
-            "completed_at": j.completed_at.map(|t| t.to_rfc3339()),
+            "created_at": format_rfc3339(j.created_at),
+            "completed_at": j.completed_at.map(format_rfc3339),
         })).collect::<Vec<_>>(),
     })))
 }

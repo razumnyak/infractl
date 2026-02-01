@@ -8,8 +8,8 @@ pub use executor::DeployExecutor;
 pub use queue::{DeployJob, DeployQueue, JobStatus};
 
 use crate::storage::{Database, DeployRecord, DeployStatus};
-use chrono::Utc;
 use std::sync::Arc;
+use time::OffsetDateTime;
 use tracing::{error, info};
 
 /// Result of a deployment operation
@@ -48,7 +48,7 @@ pub async fn start_worker(
                     deployment_name: job.deployment_name.clone(),
                     deploy_type: format!("{:?}", job.config.deploy_type),
                     status: DeployStatus::Running,
-                    started_at: Utc::now(),
+                    started_at: OffsetDateTime::now_utc(),
                     completed_at: None,
                     duration_ms: None,
                     trigger_source: job.trigger_source.clone(),
@@ -82,7 +82,7 @@ pub async fn start_worker(
                 let _ = db.update_deploy_status(
                     id,
                     status,
-                    Some(Utc::now()),
+                    Some(OffsetDateTime::now_utc()),
                     Some(result.duration_ms),
                     Some(&result.output),
                     result.error.as_deref(),

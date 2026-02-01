@@ -1141,15 +1141,25 @@
                     document.getElementById('statAvgMemBar').className = `progress-bar ${getProgressClass(avgMem)}`;
                 }
 
-                // Update Charts (mock historical data for now)
-                const now = Date.now();
-                const labels = Array.from({ length: 24 }, (_, i) => {
-                    const d = new Date(now - (23 - i) * 3600000);
-                    return d.getHours() + ':00';
-                });
-                const cpuHistory = Array.from({ length: 24 }, () => Math.random() * 30 + 20);
-                const memHistory = Array.from({ length: 24 }, () => Math.random() * 20 + 40);
-                updateCharts(cpuHistory, memHistory, labels);
+                // Update Charts with real metrics data
+                const metrics = await fetchMetrics('hourly', 24);
+                if (metrics.length > 0) {
+                    const labels = metrics.map(m => {
+                        const d = new Date(m.timestamp);
+                        return d.getHours() + ':00';
+                    });
+                    const cpuHistory = metrics.map(m => m.cpu_avg || 0);
+                    const memHistory = metrics.map(m => m.memory_avg || 0);
+                    updateCharts(cpuHistory, memHistory, labels);
+                } else {
+                    // No data yet - show empty charts with time labels
+                    const now = Date.now();
+                    const labels = Array.from({ length: 24 }, (_, i) => {
+                        const d = new Date(now - (23 - i) * 3600000);
+                        return d.getHours() + ':00';
+                    });
+                    updateCharts([], [], labels);
+                }
 
                 // Update Overview Agents Grid
                 document.getElementById('overviewAgentsGrid').innerHTML =

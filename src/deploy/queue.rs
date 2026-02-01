@@ -1,7 +1,7 @@
 use crate::config::DeploymentConfig;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use time::OffsetDateTime;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -22,9 +22,9 @@ pub struct DeployJob {
     pub deployment_name: String,
     pub config: DeploymentConfig,
     pub status: JobStatus,
-    pub created_at: DateTime<Utc>,
-    pub started_at: Option<DateTime<Utc>>,
-    pub completed_at: Option<DateTime<Utc>>,
+    pub created_at: OffsetDateTime,
+    pub started_at: Option<OffsetDateTime>,
+    pub completed_at: Option<OffsetDateTime>,
     pub trigger_source: Option<String>,
 }
 
@@ -41,7 +41,7 @@ impl DeployJob {
             deployment_name,
             config,
             status: JobStatus::Pending,
-            created_at: Utc::now(),
+            created_at: OffsetDateTime::now_utc(),
             started_at: None,
             completed_at: None,
             trigger_source,
@@ -80,7 +80,7 @@ impl DeployQueue {
         if let Some(pos) = jobs.iter().position(|j| j.status == JobStatus::Pending) {
             let mut job = jobs.remove(pos)?;
             job.status = JobStatus::Running;
-            job.started_at = Some(Utc::now());
+            job.started_at = Some(OffsetDateTime::now_utc());
 
             // Keep in queue for status tracking
             jobs.push_front(job.clone());
@@ -102,7 +102,7 @@ impl DeployQueue {
                 status,
                 JobStatus::Completed | JobStatus::Failed | JobStatus::Cancelled
             ) {
-                job.completed_at = Some(Utc::now());
+                job.completed_at = Some(OffsetDateTime::now_utc());
 
                 // Move to history
                 let completed_job = job.clone();
@@ -166,7 +166,7 @@ impl DeployQueue {
             .find(|j| j.id == job_id && j.status == JobStatus::Pending)
         {
             job.status = JobStatus::Cancelled;
-            job.completed_at = Some(Utc::now());
+            job.completed_at = Some(OffsetDateTime::now_utc());
             true
         } else {
             false

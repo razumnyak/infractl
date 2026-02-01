@@ -1,11 +1,12 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetricRecord {
     pub id: Option<i64>,
     pub agent_name: String,
-    pub collected_at: DateTime<Utc>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub collected_at: OffsetDateTime,
     pub cpu_usage: f64,
     pub memory_usage_percent: f64,
     pub memory_used: u64,
@@ -23,7 +24,8 @@ pub struct MetricRecord {
 pub struct AggregatedMetric {
     pub id: Option<i64>,
     pub agent_name: String,
-    pub period_start: DateTime<Utc>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub period_start: OffsetDateTime,
     pub cpu_avg: f64,
     pub cpu_max: f64,
     pub memory_avg: f64,
@@ -40,8 +42,10 @@ pub struct DeployRecord {
     pub deployment_name: String,
     pub deploy_type: String,
     pub status: DeployStatus,
-    pub started_at: DateTime<Utc>,
-    pub completed_at: Option<DateTime<Utc>>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub started_at: OffsetDateTime,
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    pub completed_at: Option<OffsetDateTime>,
     pub duration_ms: Option<i64>,
     pub trigger_source: Option<String>,
     pub commit_sha: Option<String>,
@@ -89,7 +93,8 @@ impl std::str::FromStr for DeployStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuspiciousRequest {
     pub id: Option<i64>,
-    pub recorded_at: DateTime<Utc>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub recorded_at: OffsetDateTime,
     pub source_ip: String,
     pub method: Option<String>,
     pub path: Option<String>,
@@ -101,7 +106,8 @@ pub struct SuspiciousRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentStatus {
     pub agent_name: String,
-    pub last_seen: DateTime<Utc>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub last_seen: OffsetDateTime,
     pub status: String,
     pub version: Option<String>,
     pub uptime_seconds: Option<u64>,
@@ -111,8 +117,10 @@ pub struct AgentStatus {
 #[derive(Debug, Clone, Deserialize)]
 pub struct MetricsQuery {
     pub agent_name: Option<String>,
-    pub from: Option<DateTime<Utc>>,
-    pub to: Option<DateTime<Utc>>,
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    pub from: Option<OffsetDateTime>,
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    pub to: Option<OffsetDateTime>,
     pub limit: Option<u32>,
     #[allow(dead_code)]
     pub aggregation: Option<AggregationType>,

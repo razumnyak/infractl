@@ -83,10 +83,15 @@ impl BinaryUpdater {
             .map_err(|e| format!("Failed to create backup directory: {}", e))?;
 
         // Create backup of current binary
+        let now = time::OffsetDateTime::now_utc();
+        let timestamp = format!(
+            "{:04}{:02}{:02}{:02}{:02}{:02}",
+            now.year(), now.month() as u8, now.day(), now.hour(), now.minute(), now.second()
+        );
         let backup_path = self.backup_dir.join(format!(
             "infractl-{}-{}",
             from_version,
-            chrono::Utc::now().format("%Y%m%d%H%M%S")
+            timestamp
         ));
 
         fs::copy(&self.current_exe, &backup_path)

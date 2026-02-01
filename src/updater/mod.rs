@@ -14,7 +14,7 @@ use tracing::{debug, error, info, warn};
 /// State of the auto-updater
 #[derive(Debug, Clone, Default)]
 pub struct UpdaterState {
-    pub last_check: Option<chrono::DateTime<chrono::Utc>>,
+    pub last_check: Option<time::OffsetDateTime>,
     pub latest_version: Option<String>,
     pub update_available: bool,
     pub last_error: Option<String>,
@@ -94,7 +94,7 @@ impl Updater {
         // Update state
         {
             let mut state = self.state.write().await;
-            state.last_check = Some(chrono::Utc::now());
+            state.last_check = Some(time::OffsetDateTime::now_utc());
             state.latest_version = Some(remote_version.clone());
             state.update_available = update_available;
             state.last_error = None;

@@ -56,11 +56,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
 
-# Time
-chrono = { version = "0.4", features = ["serde"] }
-time = "0.3.36"         # Pin to avoid edition2024
-time-core = "0.1.2"     # Pin to avoid edition2024
-time-macros = "0.2.18"  # Pin to avoid edition2024
+# Time (pinned to avoid edition2024)
+time = { version = "0.3.36", features = ["serde", "serde-human-readable", "formatting", "parsing", "macros"] }
 
 # Utilities
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -101,13 +98,8 @@ tar = "0.4"
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3"
-wiremock = "0.6"
 assert_cmd = "2"
 predicates = "3"
-
-[build-dependencies]
-# Build-time info
-chrono = "0.4"
 
 [profile.dev]
 opt-level = 0

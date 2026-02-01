@@ -2,6 +2,8 @@
 
 Infrastructure monitoring and deployment agent for self-hosted servers.
 
+![Dashboard Preview](docs/preview.png)
+
 ## Features
 
 - **System Monitoring**: CPU, RAM, disk, network metrics
@@ -46,7 +48,7 @@ curl -fsSL https://github.com/razumnyak/infractl/releases/latest/download/instal
 Or with specific version and mode:
 
 ```bash
-curl -fsSL ... | sudo bash -s -- --version v0.1.0 --mode home
+curl -fsSL ... | sudo bash -s -- --version v0.1.2 --mode home
 ```
 
 ### Docker

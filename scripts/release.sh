@@ -60,6 +60,8 @@ sedi "s/>v$CURRENT</>v$TARGET</g" src/assets/dashboard.html
 # install.sh (example in comment)
 sedi "s/v$CURRENT/v$TARGET/g" scripts/install.sh
 
+cargo fmt --all
+
 # Commit and tag
 git add -A
 git commit -m "Release v$TARGET"

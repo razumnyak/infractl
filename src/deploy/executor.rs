@@ -190,13 +190,22 @@ impl DeployExecutor {
 
             let fetch_output = self
                 .git
-                .fetch_files(repo, branch, &file_mappings, path, config.ssh_key.as_deref())
+                .fetch_files(
+                    repo,
+                    branch,
+                    &file_mappings,
+                    path,
+                    config.ssh_key.as_deref(),
+                )
                 .await?;
             output.push_str(&fetch_output);
         }
 
         // Determine compose file path
-        let compose_file = config.compose_file.as_deref().unwrap_or("docker-compose.yaml");
+        let compose_file = config
+            .compose_file
+            .as_deref()
+            .unwrap_or("docker-compose.yaml");
         let full_compose_path = format!("{}/{}", path, compose_file);
 
         // Check if compose file exists
@@ -260,8 +269,17 @@ mod tests {
         ];
         let result = parse_file_mappings(&files).unwrap();
         assert_eq!(result.len(), 2);
-        assert_eq!(result[0], ("docker-compose.yaml".to_string(), "docker-compose.yaml".to_string()));
-        assert_eq!(result[1], ("nginx/conf.d/".to_string(), "conf.d/".to_string()));
+        assert_eq!(
+            result[0],
+            (
+                "docker-compose.yaml".to_string(),
+                "docker-compose.yaml".to_string()
+            )
+        );
+        assert_eq!(
+            result[1],
+            ("nginx/conf.d/".to_string(), "conf.d/".to_string())
+        );
     }
 
     #[test]
@@ -269,7 +287,10 @@ mod tests {
         // Colon in the "to" part should work (splitn with 2)
         let files = vec!["from:to:with:colons".to_string()];
         let result = parse_file_mappings(&files).unwrap();
-        assert_eq!(result[0], ("from".to_string(), "to:with:colons".to_string()));
+        assert_eq!(
+            result[0],
+            ("from".to_string(), "to:with:colons".to_string())
+        );
     }
 
     #[test]

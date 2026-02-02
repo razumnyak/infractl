@@ -100,12 +100,7 @@ pub async fn start_worker(
 
                 // Process triggers
                 if !job.config.trigger.is_empty() {
-                    process_triggers(
-                        &job,
-                        &queue,
-                        &deployments,
-                    )
-                    .await;
+                    process_triggers(&job, &queue, &deployments).await;
                 }
             } else {
                 error!(
@@ -142,10 +137,7 @@ async fn process_triggers(
                     "Triggering next deployment in pipeline"
                 );
 
-                let trigger_source = format!(
-                    "trigger:{}",
-                    parent_job.deployment_name
-                );
+                let trigger_source = format!("trigger:{}", parent_job.deployment_name);
 
                 let job = DeployJob::new(
                     parent_job.agent_name.clone(),

@@ -681,17 +681,11 @@ mod tests {
 
     #[test]
     fn test_trigger_config_multiple() {
-        let trigger = TriggerConfig::Multiple(vec![
-            "deploy-a".to_string(),
-            "deploy-b".to_string(),
-        ]);
+        let trigger = TriggerConfig::Multiple(vec!["deploy-a".to_string(), "deploy-b".to_string()]);
         assert!(!trigger.is_empty());
         assert_eq!(trigger.as_vec(), vec!["deploy-a", "deploy-b"]);
 
-        let trigger2 = TriggerConfig::Multiple(vec![
-            "x".to_string(),
-            "y".to_string(),
-        ]);
+        let trigger2 = TriggerConfig::Multiple(vec!["x".to_string(), "y".to_string()]);
         assert_eq!(trigger2.into_vec(), vec!["x".to_string(), "y".to_string()]);
     }
 
@@ -706,12 +700,18 @@ mod tests {
         let yaml = "trigger: deploy-a";
         let wrapper: std::collections::HashMap<String, TriggerConfig> =
             serde_yaml::from_str(yaml).unwrap();
-        assert!(matches!(wrapper.get("trigger"), Some(TriggerConfig::Single(_))));
+        assert!(matches!(
+            wrapper.get("trigger"),
+            Some(TriggerConfig::Single(_))
+        ));
 
         // Multiple
         let yaml = "trigger:\n  - deploy-a\n  - deploy-b";
         let wrapper: std::collections::HashMap<String, TriggerConfig> =
             serde_yaml::from_str(yaml).unwrap();
-        assert!(matches!(wrapper.get("trigger"), Some(TriggerConfig::Multiple(_))));
+        assert!(matches!(
+            wrapper.get("trigger"),
+            Some(TriggerConfig::Multiple(_))
+        ));
     }
 }

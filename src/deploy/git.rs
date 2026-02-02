@@ -123,7 +123,10 @@ impl GitDeploy {
         let mut output = String::new();
 
         // Collect source paths for git archive
-        let source_paths: Vec<&str> = file_mappings.iter().map(|(from, _)| from.as_str()).collect();
+        let source_paths: Vec<&str> = file_mappings
+            .iter()
+            .map(|(from, _)| from.as_str())
+            .collect();
 
         info!(
             repo = %repo_url,
@@ -158,7 +161,10 @@ impl GitDeploy {
             return Err(e.clone());
         }
 
-        output.push_str(&format!("[git archive] {}\n", archive_result.unwrap_or_default()));
+        output.push_str(&format!(
+            "[git archive] {}\n",
+            archive_result.unwrap_or_default()
+        ));
 
         // Copy files according to mappings
         for (from, to) in file_mappings {

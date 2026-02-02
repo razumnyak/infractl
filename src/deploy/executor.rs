@@ -156,14 +156,62 @@ impl DeployExecutor {
     }
 
     async fn execute_docker_pull(&self, config: &DeploymentConfig) -> Result<String, String> {
-        let compose_file = config
-            .compose_file
+        let path = config
+            .path
             .as_ref()
-            .ok_or_else(|| "Docker pull requires 'compose_file' to be set".to_string())?;
+            .ok_or_else(|| "docker_pull requires 'path' to be set".to_string())?;
 
-        self.docker
-            .pull_and_restart(compose_file, config.services.as_slice(), config.prune)
-            .await
+        let mut output = String::new();
+
+        // Create path directory if it doesn't exist
+        if !std::path::Path::new(path).exists() {
+            std::fs::create_dir_all(path)
+                .map_err(|e| format!("Failed to create directory {}: {}", path, e))?;
+            info!(path = %path, "Created deployment directory");
+        }
+
+        // If git_compose_files is set, fetch files from git
+        if !config.git_compose_files.is_empty() {
+            let repo = config
+                .repo
+                .as_ref()
+                .ok_or_else(|| "git_compose_files requires 'repo' to be set".to_string())?;
+
+            let branch = config.branch.as_deref().unwrap_or("main");
+
+            // Parse file mappings (from:to format)
+            let file_mappings = parse_file_mappings(&config.git_compose_files)?;
+
+            info!(
+                repo = %repo,
+                files = ?config.git_compose_files,
+                "Fetching files from git"
+            );
+
+            let fetch_output = self
+                .git
+                .fetch_files(repo, branch, &file_mappings, path, config.ssh_key.as_deref())
+                .await?;
+            output.push_str(&fetch_output);
+        }
+
+        // Determine compose file path
+        let compose_file = config.compose_file.as_deref().unwrap_or("docker-compose.yaml");
+        let full_compose_path = format!("{}/{}", path, compose_file);
+
+        // Check if compose file exists
+        if !std::path::Path::new(&full_compose_path).exists() {
+            return Err(format!("Compose file not found: {}", full_compose_path));
+        }
+
+        // Run docker compose
+        let docker_output = self
+            .docker
+            .pull_and_restart(&full_compose_path, config.services.as_slice(), config.prune)
+            .await?;
+        output.push_str(&docker_output);
+
+        Ok(output)
     }
 
     async fn execute_custom_script(&self, config: &DeploymentConfig) -> Result<String, String> {
@@ -180,8 +228,62 @@ impl DeployExecutor {
     }
 }
 
+/// Parse file mappings from "from:to" format
+fn parse_file_mappings(files: &[String]) -> Result<Vec<(String, String)>, String> {
+    files
+        .iter()
+        .map(|s| {
+            let parts: Vec<&str> = s.splitn(2, ':').collect();
+            if parts.len() != 2 {
+                return Err(format!("Invalid format '{}', expected 'from:to'", s));
+            }
+            Ok((parts[0].to_string(), parts[1].to_string()))
+        })
+        .collect()
+}
+
 impl Default for DeployExecutor {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_file_mappings_valid() {
+        let files = vec![
+            "docker-compose.yaml:docker-compose.yaml".to_string(),
+            "nginx/conf.d/:conf.d/".to_string(),
+        ];
+        let result = parse_file_mappings(&files).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], ("docker-compose.yaml".to_string(), "docker-compose.yaml".to_string()));
+        assert_eq!(result[1], ("nginx/conf.d/".to_string(), "conf.d/".to_string()));
+    }
+
+    #[test]
+    fn test_parse_file_mappings_with_colons_in_path() {
+        // Colon in the "to" part should work (splitn with 2)
+        let files = vec!["from:to:with:colons".to_string()];
+        let result = parse_file_mappings(&files).unwrap();
+        assert_eq!(result[0], ("from".to_string(), "to:with:colons".to_string()));
+    }
+
+    #[test]
+    fn test_parse_file_mappings_invalid() {
+        let files = vec!["no-colon-here".to_string()];
+        let result = parse_file_mappings(&files);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid format"));
+    }
+
+    #[test]
+    fn test_parse_file_mappings_empty() {
+        let files: Vec<String> = vec![];
+        let result = parse_file_mappings(&files).unwrap();
+        assert!(result.is_empty());
     }
 }

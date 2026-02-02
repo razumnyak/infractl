@@ -56,9 +56,10 @@ pub async fn run(config: Config, cli: Cli) -> Result<()> {
             let queue_clone = queue.clone();
             let executor = Arc::new(DeployExecutor::new());
             let db_clone = state.db.clone();
+            let deployments = Arc::new(config.modules.deploy.deployments.clone());
 
             tokio::spawn(async move {
-                deploy::start_worker(queue_clone, executor, db_clone).await;
+                deploy::start_worker(queue_clone, executor, db_clone, deployments).await;
             });
 
             info!("Deployment worker started");

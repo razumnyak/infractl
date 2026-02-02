@@ -344,6 +344,48 @@ pub struct DeploymentConfig {
     pub timeout: Option<String>,
     #[serde(default)]
     pub prune: bool,
+    /// Files to fetch from git for docker_pull: ["from:to", "dir/:dir/"]
+    #[serde(default)]
+    pub git_compose_files: Vec<String>,
+    /// Trigger other deployments after this one completes
+    #[serde(default)]
+    pub trigger: TriggerConfig,
+    /// Continue pipeline if triggered deployment fails
+    #[serde(default)]
+    pub continue_on_failure: bool,
+}
+
+/// Trigger can be a single string or array of strings
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum TriggerConfig {
+    #[default]
+    None,
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+impl TriggerConfig {
+    pub fn is_empty(&self) -> bool {
+        matches!(self, TriggerConfig::None)
+    }
+
+    #[allow(dead_code)]
+    pub fn into_vec(self) -> Vec<String> {
+        match self {
+            TriggerConfig::None => vec![],
+            TriggerConfig::Single(s) => vec![s],
+            TriggerConfig::Multiple(v) => v,
+        }
+    }
+
+    pub fn as_vec(&self) -> Vec<&str> {
+        match self {
+            TriggerConfig::None => vec![],
+            TriggerConfig::Single(s) => vec![s.as_str()],
+            TriggerConfig::Multiple(v) => v.iter().map(|s| s.as_str()).collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -617,5 +659,59 @@ mod tests {
         assert!(is_ip_allowed(&"10.1.2.3".parse().unwrap(), &networks));
         assert!(is_ip_allowed(&"127.0.0.1".parse().unwrap(), &networks));
         assert!(!is_ip_allowed(&"8.8.8.8".parse().unwrap(), &networks));
+    }
+
+    #[test]
+    fn test_trigger_config_none() {
+        let trigger = TriggerConfig::None;
+        assert!(trigger.is_empty());
+        assert!(trigger.as_vec().is_empty());
+        assert!(trigger.into_vec().is_empty());
+    }
+
+    #[test]
+    fn test_trigger_config_single() {
+        let trigger = TriggerConfig::Single("deploy-a".to_string());
+        assert!(!trigger.is_empty());
+        assert_eq!(trigger.as_vec(), vec!["deploy-a"]);
+
+        let trigger2 = TriggerConfig::Single("deploy-b".to_string());
+        assert_eq!(trigger2.into_vec(), vec!["deploy-b".to_string()]);
+    }
+
+    #[test]
+    fn test_trigger_config_multiple() {
+        let trigger = TriggerConfig::Multiple(vec![
+            "deploy-a".to_string(),
+            "deploy-b".to_string(),
+        ]);
+        assert!(!trigger.is_empty());
+        assert_eq!(trigger.as_vec(), vec!["deploy-a", "deploy-b"]);
+
+        let trigger2 = TriggerConfig::Multiple(vec![
+            "x".to_string(),
+            "y".to_string(),
+        ]);
+        assert_eq!(trigger2.into_vec(), vec!["x".to_string(), "y".to_string()]);
+    }
+
+    #[test]
+    fn test_trigger_config_deserialize() {
+        // None (default)
+        let yaml = "trigger: ~";
+        let cfg: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        assert!(cfg.get("trigger").unwrap().is_null());
+
+        // Single string
+        let yaml = "trigger: deploy-a";
+        let wrapper: std::collections::HashMap<String, TriggerConfig> =
+            serde_yaml::from_str(yaml).unwrap();
+        assert!(matches!(wrapper.get("trigger"), Some(TriggerConfig::Single(_))));
+
+        // Multiple
+        let yaml = "trigger:\n  - deploy-a\n  - deploy-b";
+        let wrapper: std::collections::HashMap<String, TriggerConfig> =
+            serde_yaml::from_str(yaml).unwrap();
+        assert!(matches!(wrapper.get("trigger"), Some(TriggerConfig::Multiple(_))));
     }
 }

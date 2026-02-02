@@ -7,10 +7,11 @@ mod script;
 pub use executor::DeployExecutor;
 pub use queue::{DeployJob, DeployQueue, JobStatus};
 
+use crate::config::DeploymentConfig;
 use crate::storage::{Database, DeployRecord, DeployStatus};
 use std::sync::Arc;
 use time::OffsetDateTime;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Result of a deployment operation
 #[derive(Debug, Clone)]
@@ -26,6 +27,7 @@ pub async fn start_worker(
     queue: Arc<DeployQueue>,
     executor: Arc<DeployExecutor>,
     db: Option<Arc<Database>>,
+    deployments: Arc<Vec<DeploymentConfig>>,
 ) {
     info!("Starting deployment worker");
 
@@ -95,6 +97,16 @@ pub async fn start_worker(
                     duration_ms = result.duration_ms,
                     "Deployment completed successfully"
                 );
+
+                // Process triggers
+                if !job.config.trigger.is_empty() {
+                    process_triggers(
+                        &job,
+                        &queue,
+                        &deployments,
+                    )
+                    .await;
+                }
             } else {
                 error!(
                     deployment = %job.deployment_name,
@@ -106,5 +118,60 @@ pub async fn start_worker(
 
         // Small delay to prevent busy loop
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+}
+
+/// Process trigger pipeline after successful deployment
+async fn process_triggers(
+    parent_job: &DeployJob,
+    queue: &Arc<DeployQueue>,
+    deployments: &[DeploymentConfig],
+) {
+    let triggers = parent_job.config.trigger.as_vec();
+    let continue_on_failure = parent_job.config.continue_on_failure;
+
+    for trigger_name in triggers {
+        // Find the deployment config by name
+        let trigger_config = deployments.iter().find(|d| d.name == trigger_name);
+
+        match trigger_config {
+            Some(config) => {
+                info!(
+                    parent = %parent_job.deployment_name,
+                    trigger = %trigger_name,
+                    "Triggering next deployment in pipeline"
+                );
+
+                let trigger_source = format!(
+                    "trigger:{}",
+                    parent_job.deployment_name
+                );
+
+                let job = DeployJob::new(
+                    parent_job.agent_name.clone(),
+                    trigger_name.to_string(),
+                    config.clone(),
+                    Some(trigger_source),
+                );
+
+                queue.enqueue(job).await;
+            }
+            None => {
+                warn!(
+                    parent = %parent_job.deployment_name,
+                    trigger = %trigger_name,
+                    "Triggered deployment not found in config"
+                );
+
+                if !continue_on_failure {
+                    error!(
+                        parent = %parent_job.deployment_name,
+                        "Pipeline stopped: triggered deployment '{}' not found",
+                        trigger_name
+                    );
+                    break;
+                }
+            }
+        }
     }
 }

@@ -315,6 +315,9 @@ pub struct DeploymentConfig {
     pub deploy_type: DeployType,
     #[serde(default)]
     pub path: Option<String>,
+    /// Git repository URL for cloning
+    #[serde(default)]
+    pub repo: Option<String>,
     #[serde(default)]
     pub branch: Option<String>,
     #[serde(default)]

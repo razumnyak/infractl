@@ -122,7 +122,34 @@ impl DeployExecutor {
 
         let branch = config.branch.as_deref().unwrap_or("main");
         let remote = config.remote.as_deref().unwrap_or("origin");
+        let git_dir = std::path::Path::new(path).join(".git");
 
+        // Check if repo exists, if not - clone first
+        if !git_dir.exists() {
+            let repo_url = config
+                .repo
+                .as_ref()
+                .ok_or_else(|| "Git clone requires 'repo' URL to be set".to_string())?;
+
+            info!(repo = %repo_url, path = %path, "Cloning repository (first deploy)");
+
+            // Create parent directory if needed
+            if let Some(parent) = std::path::Path::new(path).parent() {
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|e| format!("Failed to create directory: {}", e))?;
+                }
+            }
+
+            let clone_output = self
+                .git
+                .clone(repo_url, path, Some(branch), config.ssh_key.as_deref())
+                .await?;
+
+            return Ok(format!("[git clone] {}\n", clone_output));
+        }
+
+        // Repo exists, do pull
         self.git
             .pull(path, remote, branch, config.ssh_key.as_deref())
             .await

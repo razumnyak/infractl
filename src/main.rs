@@ -108,8 +108,14 @@ async fn main() -> Result<()> {
             let client = reqwest::Client::new();
             let mut req = client.get(&url);
 
+            // Use provided token, or generate from config if not provided
             if let Some(t) = token {
                 req = req.header("Authorization", format!("Bearer {}", t));
+            } else if let Ok(config) = config::load(&cli.config) {
+                let jwt_manager = server::auth::JwtManager::new(&config.auth.jwt_secret);
+                if let Ok(t) = jwt_manager.generate_token("cli", 1) {
+                    req = req.header("Authorization", format!("Bearer {}", t));
+                }
             }
 
             match req.send().await {
@@ -137,6 +143,12 @@ async fn main() -> Result<()> {
             let port = config.server.port;
             let base_url = format!("http://127.0.0.1:{}", port);
 
+            // Generate token from config
+            let jwt_manager = server::auth::JwtManager::new(&config.auth.jwt_secret);
+            let token = jwt_manager
+                .generate_token("cli", 1)
+                .map_err(|e| anyhow::anyhow!("Failed to generate token: {}", e))?;
+
             let url = match target {
                 Some(addr) => format!("{}/api/agents/{}/deploy/{}", base_url, addr, name),
                 None => format!("{}/webhook/deploy/{}", base_url, name),
@@ -145,7 +157,12 @@ async fn main() -> Result<()> {
             println!("Triggering deployment: {}", name);
 
             let client = reqwest::Client::new();
-            match client.post(&url).send().await {
+            match client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", token))
+                .send()
+                .await
+            {
                 Ok(resp) => {
                     let status = resp.status();
                     let body = resp.text().await.unwrap_or_default();

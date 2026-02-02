@@ -69,7 +69,6 @@ impl GitDeploy {
     }
 
     /// Clone a repository
-    #[allow(dead_code)]
     pub async fn clone(
         &self,
         url: &str,

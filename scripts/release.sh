@@ -45,6 +45,9 @@ sedi() {
 # Cargo.toml
 sedi "s/^version = \"$CURRENT\"/version = \"$TARGET\"/" Cargo.toml
 
+# Update Cargo.lock
+cargo check --quiet
+
 # README.md
 sedi "s/v$CURRENT/v$TARGET/g" README.md
 

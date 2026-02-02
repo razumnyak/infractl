@@ -7,8 +7,8 @@ Requires=docker.service
 
 [Service]
 Type=simple
-User=root
-Group=root
+User=infractl
+Group=infractl
 
 # Binary location
 ExecStart=/usr/local/bin/infractl --config /etc/infractl/config.yaml
@@ -23,21 +23,25 @@ StartLimitBurst=3
 EnvironmentFile=-/etc/infractl/env
 Environment=RUST_LOG=info
 Environment=RUST_BACKTRACE=1
+Environment=HOME=/var/lib/infractl
 
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=read-only
 PrivateTmp=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 
 # Read-write paths
-ReadWritePaths=/var/lib/infractl /var/log/infractl
+ReadWritePaths=/var/lib/infractl /var/log/infractl /var/www
 
 # Allow Docker socket access
 ReadWritePaths=/var/run/docker.sock
+
+# SSH for git deployments (isolated from server SSH)
+ReadOnlyPaths=/var/lib/infractl/.ssh
 
 # Working directory
 WorkingDirectory=/var/lib/infractl

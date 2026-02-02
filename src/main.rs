@@ -53,6 +53,126 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Handle CLI commands that don't require starting the server
+    match &cli.command {
+        // Version command
+        Some(cli::Commands::Version) => {
+            println!("infractl v{}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+
+        // Validate config command
+        Some(cli::Commands::Validate { config: cfg_path }) => {
+            let path = cfg_path.as_ref().unwrap_or(&cli.config);
+            match config::load(path) {
+                Ok(cfg) => {
+                    println!("Configuration is valid");
+                    println!("  Mode: {:?}", cfg.mode);
+                    println!("  Port: {}", cfg.server.port);
+                    println!("  Deployments: {}", cfg.modules.deploy.deployments.len());
+                }
+                Err(e) => {
+                    eprintln!("Configuration error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+            return Ok(());
+        }
+
+        // Token generation command
+        Some(cli::Commands::Token { subject, ttl }) => {
+            let config = config::load(&cli.config)?;
+            let ttl_hours = server::auth::parse_ttl_to_hours(ttl);
+            let jwt_manager = server::auth::JwtManager::new(&config.auth.jwt_secret);
+
+            match jwt_manager.generate_token(subject, ttl_hours) {
+                Ok(token) => {
+                    println!("{}", token);
+                }
+                Err(e) => {
+                    eprintln!("Failed to generate token: {}", e);
+                    std::process::exit(1);
+                }
+            }
+            return Ok(());
+        }
+
+        // Health check command
+        Some(cli::Commands::Health { address, token }) => {
+            let url = if address.starts_with("http") {
+                format!("{}/health", address)
+            } else {
+                format!("http://{}/health", address)
+            };
+
+            let client = reqwest::Client::new();
+            let mut req = client.get(&url);
+
+            if let Some(t) = token {
+                req = req.header("Authorization", format!("Bearer {}", t));
+            }
+
+            match req.send().await {
+                Ok(resp) => {
+                    let status = resp.status();
+                    let body = resp.text().await.unwrap_or_default();
+                    if status.is_success() {
+                        println!("{}", body);
+                    } else {
+                        eprintln!("Health check failed ({}): {}", status, body);
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to connect: {}", e);
+                    std::process::exit(1);
+                }
+            }
+            return Ok(());
+        }
+
+        // Deploy command (connect to running service)
+        Some(cli::Commands::Deploy { name, target }) => {
+            let config = config::load(&cli.config)?;
+            let port = config.server.port;
+            let base_url = format!("http://127.0.0.1:{}", port);
+
+            let url = match target {
+                Some(addr) => format!("{}/api/agents/{}/deploy/{}", base_url, addr, name),
+                None => format!("{}/webhook/deploy/{}", base_url, name),
+            };
+
+            println!("Triggering deployment: {}", name);
+
+            let client = reqwest::Client::new();
+            match client.post(&url).send().await {
+                Ok(resp) => {
+                    let status = resp.status();
+                    let body = resp.text().await.unwrap_or_default();
+                    if status.is_success() {
+                        println!("Deployment triggered successfully");
+                        println!("{}", body);
+                    } else {
+                        eprintln!("Deployment failed ({}): {}", status, body);
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to connect to infractl service: {}", e);
+                    eprintln!("Is the service running? Check: systemctl status infractl");
+                    std::process::exit(1);
+                }
+            }
+            return Ok(());
+        }
+
+        // Run or no command - continue to start server
+        Some(cli::Commands::Run) | None => {}
+
+        // SelfUpdate is handled earlier
+        Some(cli::Commands::SelfUpdate { .. }) => unreachable!(),
+    }
+
     logging::init(&cli)?;
 
     info!(version = env!("CARGO_PKG_VERSION"), "Starting infractl");

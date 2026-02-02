@@ -19,6 +19,8 @@ INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/infractl"
 DATA_DIR="/var/lib/infractl"
 LOG_DIR="/var/log/infractl"
+APPS_DIR="/var/www"
+SERVICE_USER="infractl"
 VERSION="${VERSION:-latest}"
 MODE="${MODE:-agent}"
 
@@ -120,11 +122,70 @@ download_binary() {
     chmod +x "${INSTALL_DIR}/infractl"
 }
 
+# Create service user
+create_user() {
+    if id "${SERVICE_USER}" &>/dev/null; then
+        log_info "User ${SERVICE_USER} already exists"
+    else
+        log_info "Creating user ${SERVICE_USER}..."
+        useradd -r -s /sbin/nologin -d "${DATA_DIR}" -m "${SERVICE_USER}"
+    fi
+
+    # Add to docker group if docker is installed
+    if getent group docker &>/dev/null; then
+        usermod -aG docker "${SERVICE_USER}"
+        log_info "Added ${SERVICE_USER} to docker group"
+    fi
+}
+
 # Create directories
 create_directories() {
     log_info "Creating directories..."
-    mkdir -p "${CONFIG_DIR}" "${DATA_DIR}" "${LOG_DIR}"
-    chmod 755 "${CONFIG_DIR}" "${DATA_DIR}" "${LOG_DIR}"
+    mkdir -p "${CONFIG_DIR}" "${DATA_DIR}" "${DATA_DIR}/.ssh" "${LOG_DIR}" "${APPS_DIR}"
+
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" "${DATA_DIR}" "${LOG_DIR}" "${APPS_DIR}"
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" "${CONFIG_DIR}"
+
+    chmod 755 "${CONFIG_DIR}" "${DATA_DIR}" "${LOG_DIR}" "${APPS_DIR}"
+    chmod 700 "${DATA_DIR}/.ssh"
+}
+
+# Generate SSH deploy key
+create_ssh_key() {
+    local key_path="${DATA_DIR}/.ssh/deploy"
+
+    if [[ -f "${key_path}" ]]; then
+        log_info "SSH deploy key already exists"
+    else
+        log_info "Generating SSH deploy key..."
+        sudo -u "${SERVICE_USER}" ssh-keygen -t ed25519 -f "${key_path}" -N "" -C "infractl-deploy"
+
+        # Create default SSH config
+        cat > "${DATA_DIR}/.ssh/config" << EOF
+# Default deploy key for all GitHub repos
+Host github.com
+    HostName github.com
+    User git
+    IdentityFile ${key_path}
+    IdentitiesOnly yes
+    StrictHostKeyChecking accept-new
+
+# Example: per-repo key (uncomment and customize)
+# Host github-myapp
+#     HostName github.com
+#     User git
+#     IdentityFile ${DATA_DIR}/.ssh/myapp
+#     IdentitiesOnly yes
+EOF
+        chown "${SERVICE_USER}:${SERVICE_USER}" "${DATA_DIR}/.ssh/config"
+        chmod 600 "${DATA_DIR}/.ssh/config"
+
+        echo ""
+        log_info "Deploy key public key (add to GitHub repo as Deploy Key):"
+        echo ""
+        cat "${key_path}.pub"
+        echo ""
+    fi
 }
 
 # Create default config
@@ -177,7 +238,7 @@ modules:
 
   deploy:
     enabled: true
-    work_dir: "/opt/apps"
+    work_dir: "/var/www"
     deployments: []
 
   webhooks:
@@ -220,7 +281,7 @@ modules:
 
   deploy:
     enabled: true
-    work_dir: "/opt/apps"
+    work_dir: "/var/www"
     deployments: []
     #  - name: "myapp"
     #    type: git_pull
@@ -291,8 +352,14 @@ main() {
         log_info "Latest version: ${VERSION}"
     fi
 
+    # Create service user
+    create_user
+
     # Create directories
     create_directories
+
+    # Generate SSH deploy key
+    create_ssh_key
 
     # Download binary
     download_binary "$VERSION" "$platform"

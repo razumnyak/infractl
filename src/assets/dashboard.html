@@ -786,9 +786,17 @@
         }
 
         // API Functions
+        function apiHeaders() {
+            const headers = { 'Content-Type': 'application/json' };
+            if (window.INFRACTL_TOKEN) {
+                headers['Authorization'] = `Bearer ${window.INFRACTL_TOKEN}`;
+            }
+            return headers;
+        }
+
         async function fetchAgents() {
             try {
-                const res = await fetch('/api/agents');
+                const res = await fetch('/api/agents', { headers: apiHeaders() });
                 const data = await res.json();
                 return data.agents || [];
             } catch (e) {
@@ -799,7 +807,7 @@
 
         async function fetchAgentStatuses() {
             try {
-                const res = await fetch('/api/agents/statuses');
+                const res = await fetch('/api/agents/statuses', { headers: apiHeaders() });
                 return await res.json();
             } catch (e) {
                 console.error('Failed to fetch agent statuses:', e);
@@ -819,7 +827,7 @@
 
         async function fetchDeployQueue() {
             try {
-                const res = await fetch('/webhook/queue');
+                const res = await fetch('/webhook/queue', { headers: apiHeaders() });
                 return await res.json();
             } catch (e) {
                 console.error('Failed to fetch queue:', e);
@@ -829,7 +837,7 @@
 
         async function fetchMetrics(period = 'hourly', limit = 24) {
             try {
-                const res = await fetch(`/api/metrics?period=${period}&limit=${limit}`);
+                const res = await fetch(`/api/metrics?period=${period}&limit=${limit}`, { headers: apiHeaders() });
                 return await res.json();
             } catch (e) {
                 console.error('Failed to fetch metrics:', e);
@@ -1034,7 +1042,7 @@
             try {
                 const res = await fetch(`/webhook/deploy/${deployment}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: apiHeaders(),
                     body: JSON.stringify({ source: document.getElementById('deploySource').value || 'manual' })
                 });
                 const data = await res.json();
@@ -1176,7 +1184,7 @@
 
                 // Fetch deployments for modal
                 try {
-                    const deployRes = await fetch('/api/deployments');
+                    const deployRes = await fetch('/api/deployments', { headers: apiHeaders() });
                     const deployData = await deployRes.json();
                     deployments = deployData.deployments || [];
                 } catch (e) {

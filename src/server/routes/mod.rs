@@ -5,6 +5,7 @@ mod webhook;
 use crate::server::assets;
 use crate::server::AppState;
 use axum::{
+    extract::State,
     response::Response,
     routing::{get, post},
     Router,
@@ -47,8 +48,8 @@ async fn root() -> &'static str {
     "infractl"
 }
 
-async fn monitoring_dashboard() -> Response {
-    assets::serve_dashboard().await
+async fn monitoring_dashboard(State(state): State<Arc<AppState>>) -> Response {
+    assets::serve_dashboard_with_token(&state.config.auth.jwt_secret).await
 }
 
 async fn list_agents(

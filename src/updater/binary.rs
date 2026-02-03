@@ -243,33 +243,9 @@ impl Default for BinaryUpdater {
 pub fn signal_systemd_restart() -> Result<(), String> {
     // Check if running under systemd
     if std::env::var("INVOCATION_ID").is_ok() || std::env::var("NOTIFY_SOCKET").is_ok() {
-        info!("Running under systemd, signaling restart");
-
-        // Use systemctl to restart
-        let service_name = "infractl";
-
-        match Command::new("systemctl")
-            .args(["restart", service_name])
-            .status()
-        {
-            Ok(status) if status.success() => {
-                info!("Systemd restart signal sent");
-                Ok(())
-            }
-            Ok(status) => {
-                warn!(
-                    code = ?status.code(),
-                    "systemctl restart returned non-zero"
-                );
-                // Fall back to self-restart
-                self_restart()
-            }
-            Err(e) => {
-                warn!(error = %e, "Failed to run systemctl");
-                // Fall back to self-restart
-                self_restart()
-            }
-        }
+        info!("Running under systemd, exiting to trigger automatic restart");
+        // Service has Restart=always, so just exit and systemd will restart us
+        std::process::exit(0);
     } else {
         self_restart()
     }

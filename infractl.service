@@ -35,7 +35,7 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 
 # Read-write paths
-ReadWritePaths=/var/lib/infractl /var/log/infractl /var/www
+ReadWritePaths=/etc/infractl /var/lib/infractl /var/log/infractl /var/www
 
 # Allow Docker socket access
 ReadWritePaths=/var/run/docker.sock

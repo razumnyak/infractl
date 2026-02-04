@@ -300,9 +300,20 @@ impl DeployExecutor {
 
         let working_dir = config.working_dir.as_deref().or(config.path.as_deref());
 
-        self.script
-            .run_script(script, working_dir, &config.env, config.user.as_deref())
-            .await
+        // Check if script is a file path or inline script
+        let is_file = std::path::Path::new(script.trim()).exists()
+            || (!script.contains('\n') && !script.contains(' ') && script.ends_with(".sh"));
+
+        if is_file {
+            self.script
+                .run_script(script, working_dir, &config.env, config.user.as_deref())
+                .await
+        } else {
+            // Inline script — run via sh -c
+            self.script
+                .run_command(script, working_dir.or(config.path.as_deref()), &config.env)
+                .await
+        }
     }
 
     /// Execute shutdown commands for a deployment

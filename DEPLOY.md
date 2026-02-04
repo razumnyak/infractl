@@ -48,7 +48,7 @@ Internet ──X──┐
 curl -fsSL https://github.com/razumnyak/infractl/releases/latest/download/install.sh | sudo bash
 
 # Install specific version as home
-curl -fsSL https://github.com/razumnyak/infractl/releases/latest/download/install.sh | sudo bash -s -- --version v0.1.13 --mode home
+curl -fsSL https://github.com/razumnyak/infractl/releases/latest/download/install.sh | sudo bash -s -- --version v0.1.14 --mode home
 ```
 
 ### 2. Manual Installation

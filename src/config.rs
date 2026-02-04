@@ -346,12 +346,12 @@ pub struct DeploymentConfig {
     #[serde(default)]
     pub env: HashMap<String, String>,
     #[serde(default)]
-    pub pre_deploy: Vec<String>,
+    pub pre_deploy: CommandList,
     #[serde(default)]
-    pub post_deploy: Vec<String>,
+    pub post_deploy: CommandList,
     /// Commands to run when stopping deployment (default: docker compose down for docker_pull)
     #[serde(default)]
-    pub shutdown: Vec<String>,
+    pub shutdown: CommandList,
     #[serde(default)]
     pub timeout: Option<String>,
     #[serde(default)]
@@ -368,6 +368,34 @@ pub struct DeploymentConfig {
     /// Docker deploy strategy (default, force_recreate, restart)
     #[serde(default)]
     pub strategy: Option<DeployStrategy>,
+}
+
+/// Command list: accepts a string (multiline split by \n) or array of strings
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CommandList {
+    #[default]
+    None,
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+impl CommandList {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            CommandList::None => true,
+            CommandList::Single(s) => s.trim().is_empty(),
+            CommandList::Multiple(v) => v.is_empty(),
+        }
+    }
+
+    pub fn as_vec(&self) -> Vec<&str> {
+        match self {
+            CommandList::None => vec![],
+            CommandList::Single(s) => s.lines().filter(|l| !l.trim().is_empty()).collect(),
+            CommandList::Multiple(v) => v.iter().map(|s| s.as_str()).collect(),
+        }
+    }
 }
 
 /// Trigger can be a single string or array of strings
@@ -709,6 +737,12 @@ fn validate(config: &Config) -> Result<()> {
                 }
             }
             DeployType::DockerPull => {
+                if deploy.path.is_none() {
+                    return Err(InfraError::Config(format!(
+                        "Deployment '{}' of type docker_pull requires 'path'",
+                        deploy.name
+                    )));
+                }
                 if deploy.compose_file.is_none() {
                     return Err(InfraError::Config(format!(
                         "Deployment '{}' of type docker_pull requires 'compose_file'",

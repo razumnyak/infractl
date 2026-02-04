@@ -31,10 +31,29 @@ impl DeployExecutor {
             "Starting deployment"
         );
 
+        // Ensure working directory exists (create recursively if needed)
+        if let Some(ref path) = config.path {
+            let p = std::path::Path::new(path.as_str());
+            if !p.exists() {
+                if let Err(e) = std::fs::create_dir_all(p) {
+                    let error_msg = format!("Failed to create path '{}': {}", path, e);
+                    error!("{}", error_msg);
+                    return DeployResult {
+                        success: false,
+                        skipped: false,
+                        output,
+                        error: Some(error_msg),
+                        duration_ms: start.elapsed().as_millis() as i64,
+                    };
+                }
+                info!(path = %path, "Created deployment directory");
+            }
+        }
+
         // Run pre-deploy commands
         if !config.pre_deploy.is_empty() {
             info!("Running pre-deploy commands");
-            for cmd in &config.pre_deploy {
+            for cmd in config.pre_deploy.as_vec() {
                 match self
                     .script
                     .run_command(cmd, config.path.as_deref(), &config.env)
@@ -72,12 +91,6 @@ impl DeployExecutor {
             match (path, repo) {
                 (Ok(path), Ok(repo)) => {
                     let branch = config.branch.as_deref().unwrap_or("main");
-
-                    if !std::path::Path::new(path).exists() {
-                        std::fs::create_dir_all(path)
-                            .map_err(|e| format!("Failed to create directory {}: {}", path, e))
-                            .ok();
-                    }
 
                     let file_mappings = parse_file_mappings(&config.git_files);
                     match file_mappings {
@@ -175,7 +188,7 @@ impl DeployExecutor {
         // Run post-deploy commands (skip if no changes detected)
         if !skipped && !config.post_deploy.is_empty() {
             info!("Running post-deploy commands");
-            for cmd in &config.post_deploy {
+            for cmd in config.post_deploy.as_vec() {
                 match self
                     .script
                     .run_command(cmd, config.path.as_deref(), &config.env)
@@ -257,19 +270,15 @@ impl DeployExecutor {
 
         let mut output = String::new();
 
-        // Create path directory if it doesn't exist
-        if !std::path::Path::new(path).exists() {
-            std::fs::create_dir_all(path)
-                .map_err(|e| format!("Failed to create directory {}: {}", path, e))?;
-            info!(path = %path, "Created deployment directory");
-        }
-
         // Determine compose file path
         let compose_file = config
             .compose_file
             .as_deref()
             .unwrap_or("docker-compose.yaml");
-        let full_compose_path = format!("{}/{}", path, compose_file);
+        let full_compose_path = std::path::Path::new(path)
+            .join(compose_file)
+            .to_string_lossy()
+            .to_string();
 
         // Check if compose file exists
         if !std::path::Path::new(&full_compose_path).exists() {
@@ -330,7 +339,7 @@ impl DeployExecutor {
         // If explicit shutdown commands are specified, use them
         if !config.shutdown.is_empty() {
             info!("Running shutdown commands");
-            for cmd in &config.shutdown {
+            for cmd in config.shutdown.as_vec() {
                 match self
                     .script
                     .run_command(cmd, config.path.as_deref(), &config.env)
@@ -359,7 +368,10 @@ impl DeployExecutor {
                     .compose_file
                     .as_deref()
                     .unwrap_or("docker-compose.yaml");
-                let full_compose_path = format!("{}/{}", path, compose_file);
+                let full_compose_path = std::path::Path::new(path)
+                    .join(compose_file)
+                    .to_string_lossy()
+                    .to_string();
 
                 if std::path::Path::new(&full_compose_path).exists() {
                     info!(compose_file = %full_compose_path, "Running docker compose down");

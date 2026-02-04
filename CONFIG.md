@@ -262,7 +262,8 @@ Duplicate names are ignored (first wins).
 | `compose_file` | docker_pull | **Yes** | Compose file name (relative to path) |
 | `services` | docker_pull | No | Specific services to pull |
 | `prune` | docker_pull | No | Prune old images after pull |
-| `git_compose_files` | docker_pull | No | Fetch files from git: `["src:dst", "dir/:dir/"]` |
+| `strategy` | docker_pull | No | Deploy strategy: `default`, `force_recreate`, `restart` |
+| `git_files` | all | No | Fetch files from git: `["src:dst", "dir/:dir/"]` (alias: `git_compose_files`) |
 | `script` | custom_script | **Yes** | Script path or inline command |
 | `working_dir` | custom_script | No | Script working directory |
 | `user` | custom_script | No | Run script as user |
@@ -276,8 +277,44 @@ Duplicate names are ignored (first wins).
 | `post_deploy` | list | `[]` | Commands to run after deploy |
 | `shutdown` | list | `[]` | Commands to run on stop (default: `docker compose down` for docker_pull) |
 | `timeout` | duration | `default_timeout` | Deployment timeout |
-| `trigger` | string/list | - | Trigger other deployments after success |
+| `trigger` | string/list | - | Trigger other deployments after success (skipped if no changes for git_pull) |
 | `continue_on_failure` | boolean | `false` | Continue pipeline if triggered deploy fails |
+
+#### Deploy Strategy (docker_pull)
+
+| Strategy | Behavior |
+|----------|----------|
+| `default` | `docker compose up -d --remove-orphans` — only recreates if compose definition changed |
+| `force_recreate` | `docker compose up -d --force-recreate --remove-orphans` — recreates containers, picks up volume changes |
+| `restart` | `docker compose up -d` then `docker compose restart` — restart process in existing container |
+
+#### Multi-Stage Pipelines
+
+Use `trigger` to chain deployments. `git_pull` skips triggers when no changes detected.
+
+```yaml
+# Stage 1: Git pull (skips pipeline if no changes)
+- name: "App-Git"
+  type: git_pull
+  path: "/var/lib/infractl/repos/myapp"
+  repo: "git@github.com:org/myapp.git"
+  branch: "main"
+  trigger: "App-Sync"
+
+# Stage 2: Sync files
+- name: "App-Sync"
+  type: custom_script
+  script: |
+    rsync -a --delete /var/lib/infractl/repos/myapp/deploy/ /var/www/myapp/
+  trigger: "App-Docker"
+
+# Stage 3: Docker restart
+- name: "App-Docker"
+  type: docker_pull
+  path: "/var/www/myapp"
+  compose_file: "docker-compose.yaml"
+  strategy: force_recreate
+```
 
 #### Agent Assignments
 

@@ -58,6 +58,87 @@ impl DeployExecutor {
             }
         }
 
+        // Fetch files from git if configured (works for all deploy types)
+        if !config.git_files.is_empty() {
+            let path = config
+                .path
+                .as_ref()
+                .ok_or_else(|| "git_files requires 'path' to be set".to_string());
+            let repo = config
+                .repo
+                .as_ref()
+                .ok_or_else(|| "git_files requires 'repo' to be set".to_string());
+
+            match (path, repo) {
+                (Ok(path), Ok(repo)) => {
+                    let branch = config.branch.as_deref().unwrap_or("main");
+
+                    if !std::path::Path::new(path).exists() {
+                        std::fs::create_dir_all(path)
+                            .map_err(|e| format!("Failed to create directory {}: {}", path, e))
+                            .ok();
+                    }
+
+                    let file_mappings = parse_file_mappings(&config.git_files);
+                    match file_mappings {
+                        Ok(mappings) => {
+                            info!(
+                                repo = %repo,
+                                files = ?config.git_files,
+                                "Fetching files from git"
+                            );
+                            match self
+                                .git
+                                .fetch_files(
+                                    repo,
+                                    branch,
+                                    &mappings,
+                                    path,
+                                    config.ssh_key.as_deref(),
+                                )
+                                .await
+                            {
+                                Ok(fetch_output) => output.push_str(&fetch_output),
+                                Err(e) => {
+                                    let error_msg = format!("git_files fetch failed: {}", e);
+                                    error!("{}", error_msg);
+                                    return DeployResult {
+                                        success: false,
+                                        skipped: false,
+                                        output,
+                                        error: Some(error_msg),
+                                        duration_ms: start.elapsed().as_millis() as i64,
+                                    };
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            let error_msg = format!("git_files parse failed: {}", e);
+                            error!("{}", error_msg);
+                            return DeployResult {
+                                success: false,
+                                skipped: false,
+                                output,
+                                error: Some(error_msg),
+                                duration_ms: start.elapsed().as_millis() as i64,
+                            };
+                        }
+                    }
+                }
+                (Err(e), _) | (_, Err(e)) => {
+                    let error_msg = e;
+                    error!("{}", error_msg);
+                    return DeployResult {
+                        success: false,
+                        skipped: false,
+                        output,
+                        error: Some(error_msg),
+                        duration_ms: start.elapsed().as_millis() as i64,
+                    };
+                }
+            }
+        }
+
         // Execute main deployment based on type
         let mut skipped = false;
         let result = match config.deploy_type {
@@ -181,37 +262,6 @@ impl DeployExecutor {
             std::fs::create_dir_all(path)
                 .map_err(|e| format!("Failed to create directory {}: {}", path, e))?;
             info!(path = %path, "Created deployment directory");
-        }
-
-        // If git_compose_files is set, fetch files from git
-        if !config.git_compose_files.is_empty() {
-            let repo = config
-                .repo
-                .as_ref()
-                .ok_or_else(|| "git_compose_files requires 'repo' to be set".to_string())?;
-
-            let branch = config.branch.as_deref().unwrap_or("main");
-
-            // Parse file mappings (from:to format)
-            let file_mappings = parse_file_mappings(&config.git_compose_files)?;
-
-            info!(
-                repo = %repo,
-                files = ?config.git_compose_files,
-                "Fetching files from git"
-            );
-
-            let fetch_output = self
-                .git
-                .fetch_files(
-                    repo,
-                    branch,
-                    &file_mappings,
-                    path,
-                    config.ssh_key.as_deref(),
-                )
-                .await?;
-            output.push_str(&fetch_output);
         }
 
         // Determine compose file path

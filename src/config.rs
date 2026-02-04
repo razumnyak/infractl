@@ -356,9 +356,9 @@ pub struct DeploymentConfig {
     pub timeout: Option<String>,
     #[serde(default)]
     pub prune: bool,
-    /// Files to fetch from git for docker_pull: ["from:to", "dir/:dir/"]
-    #[serde(default)]
-    pub git_compose_files: Vec<String>,
+    /// Files to fetch from git: ["from:to", "dir/:dir/"]
+    #[serde(default, alias = "git_compose_files")]
+    pub git_files: Vec<String>,
     /// Trigger other deployments after this one completes
     #[serde(default)]
     pub trigger: TriggerConfig,

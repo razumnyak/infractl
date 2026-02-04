@@ -1,7 +1,7 @@
 #!/bin/bash
 # infractl installation script
 # Usage: curl -fsSL https://raw.githubusercontent.com/razumnyak/infractl/main/scripts/install.sh | bash
-# Or: ./install.sh [--version v0.1.10] [--mode agent|home]
+# Or: ./install.sh [--version v0.1.11] [--mode agent|home]
 #
 # Alpine Linux: apk add bash curl before running
 

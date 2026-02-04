@@ -141,8 +141,8 @@ impl GitDeploy {
         fs::create_dir_all(dest_path)
             .map_err(|e| format!("Failed to create directory {}: {}", dest_path, e))?;
 
-        // Create temp directory for extraction
-        let temp_dir = format!("{}/._git_temp_{}", dest_path, std::process::id());
+        // Create temp directory for extraction (use /tmp to avoid permission issues)
+        let temp_dir = format!("/tmp/infractl_git_temp_{}", std::process::id());
         fs::create_dir_all(&temp_dir)
             .map_err(|e| format!("Failed to create temp directory: {}", e))?;
 

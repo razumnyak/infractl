@@ -77,6 +77,23 @@ impl DockerDeploy {
         self.run_docker_command(&["image", "prune", "-f"]).await
     }
 
+    /// Stop containers using docker-compose down
+    pub async fn down(&self, compose_file: &str) -> Result<String, String> {
+        let compose_path = Path::new(compose_file);
+        let working_dir = compose_path
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string());
+
+        let compose_filename = compose_path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| "docker-compose.yml".to_string());
+
+        self.run_compose_command(&working_dir, &compose_filename, "down", &[])
+            .await
+    }
+
     async fn run_compose_command(
         &self,
         working_dir: &str,

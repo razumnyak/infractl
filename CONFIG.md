@@ -213,6 +213,7 @@ modules:
     enabled: true
     work_dir: "/opt/apps"
     default_timeout: "300s"
+    external_deployments_path: "/etc/infractl"  # loads deployments.yaml + deployments.d/*.yaml
     deployments:
       - name: "myapp"
         type: git_pull
@@ -220,6 +221,9 @@ modules:
         branch: "main"
         post_deploy:
           - "docker compose up -d"
+        shutdown:
+          - "docker compose down"
+        trigger: "myapp-nginx"  # or list: ["app1", "app2"]
 ```
 
 | Field | Type | Default | Description |
@@ -227,7 +231,17 @@ modules:
 | `enabled` | boolean | `true` | Enable deploy module |
 | `work_dir` | string | `/opt/apps` | Default working directory |
 | `default_timeout` | duration | `300s` | Default deployment timeout |
+| `external_deployments_path` | string | `/etc/infractl` | Load additional deployments from this path |
 | `deployments` | list | `[]` | Deployment configurations |
+
+#### External Deployments
+
+Deployments can be loaded from multiple sources:
+- `config.yaml` → `modules.deploy.deployments` (base)
+- `{external_deployments_path}/deployments.yaml` (single file)
+- `{external_deployments_path}/deployments.d/*.yaml` (directory)
+
+Duplicate names are ignored (first wins).
 
 #### deployment
 
@@ -240,13 +254,15 @@ modules:
 
 | Field | For Type | Required | Description |
 |-------|----------|----------|-------------|
-| `path` | git_pull | **Yes** | Local repository path |
-| `branch` | git_pull | No | Git branch (default: current) |
+| `path` | git_pull, docker_pull | **Yes** | Local path for repository/compose files |
+| `repo` | git_pull, docker_pull | No | Git repository URL (for clone or file fetch) |
+| `branch` | git_pull, docker_pull | No | Git branch (default: main) |
 | `remote` | git_pull | No | Git remote (default: origin) |
-| `ssh_key` | git_pull | No | Path to SSH private key |
-| `compose_file` | docker_pull | **Yes** | Path to docker-compose.yml |
+| `ssh_key` | git_pull, docker_pull | No | Path to SSH private key |
+| `compose_file` | docker_pull | **Yes** | Compose file name (relative to path) |
 | `services` | docker_pull | No | Specific services to pull |
 | `prune` | docker_pull | No | Prune old images after pull |
+| `git_compose_files` | docker_pull | No | Fetch files from git: `["src:dst", "dir/:dir/"]` |
 | `script` | custom_script | **Yes** | Script path or inline command |
 | `working_dir` | custom_script | No | Script working directory |
 | `user` | custom_script | No | Run script as user |
@@ -258,7 +274,42 @@ modules:
 | `env` | map | `{}` | Environment variables |
 | `pre_deploy` | list | `[]` | Commands to run before deploy |
 | `post_deploy` | list | `[]` | Commands to run after deploy |
+| `shutdown` | list | `[]` | Commands to run on stop (default: `docker compose down` for docker_pull) |
 | `timeout` | duration | `default_timeout` | Deployment timeout |
+| `trigger` | string/list | - | Trigger other deployments after success |
+| `continue_on_failure` | boolean | `false` | Continue pipeline if triggered deploy fails |
+
+#### Agent Assignments
+
+Deployments can be delegated to agents. Assignments are stored in `/etc/infractl/modify.yaml`:
+
+```yaml
+assignments:
+  Traefik: "10.0.0.5:8111"
+  MyApp: "10.0.0.6:8111"
+```
+
+**CLI Usage:**
+
+```bash
+# One-time forward to agent
+infractl deploy --name Traefik --agent 10.0.0.5:8111
+
+# Save assignment permanently
+infractl deploy --name Traefik --agent 10.0.0.5:8111 --permanent
+
+# Deploy using saved assignment (or local if none)
+infractl deploy --name Traefik
+
+# Stop deployment and clear assignment
+infractl deploy --name Traefik --reset   # or --stop
+
+# Stop on specific agent
+infractl deploy --name Traefik --stop --agent 10.0.0.5:8111
+
+# List deployments with assignments
+infractl deploy --list
+```
 
 ---
 

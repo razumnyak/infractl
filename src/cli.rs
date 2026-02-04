@@ -75,12 +75,28 @@ pub enum Commands {
     /// Trigger a deployment
     Deploy {
         /// Deployment name
-        #[arg(short, long)]
-        name: String,
+        #[arg(short, long, required_unless_present_any = ["list", "reset"])]
+        name: Option<String>,
 
-        /// Target agent address (for Home mode forwarding)
+        /// Target agent address (deprecated, use --agent)
         #[arg(short, long)]
         target: Option<String>,
+
+        /// Agent address to forward deployment to
+        #[arg(short, long)]
+        agent: Option<String>,
+
+        /// List all available deployments
+        #[arg(short, long)]
+        list: bool,
+
+        /// Save agent assignment permanently
+        #[arg(short, long)]
+        permanent: bool,
+
+        /// Stop deployment and clear saved agent assignment
+        #[arg(long, visible_alias = "stop")]
+        reset: bool,
     },
 
     /// Update infractl to the latest version

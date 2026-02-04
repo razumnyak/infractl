@@ -1,5 +1,5 @@
 use crate::config::{Config, Mode};
-use crate::deploy::DeployQueue;
+use crate::deploy::{DeployExecutor, DeployQueue};
 use crate::server::middleware::rate_limit::RateLimiter;
 use crate::storage::Database;
 use std::sync::Arc;
@@ -12,14 +12,19 @@ pub struct AppState {
     pub db: Option<Arc<Database>>,
     /// Deployment queue
     pub deploy_queue: Option<Arc<DeployQueue>>,
+    /// Deployment executor for direct operations (shutdown)
+    pub deploy_executor: Option<Arc<DeployExecutor>>,
 }
 
 impl AppState {
     pub fn new(config: Config) -> Arc<Self> {
-        let deploy_queue = if config.modules.deploy.enabled {
-            Some(Arc::new(DeployQueue::default()))
+        let (deploy_queue, deploy_executor) = if config.modules.deploy.enabled {
+            (
+                Some(Arc::new(DeployQueue::default())),
+                Some(Arc::new(DeployExecutor::new())),
+            )
         } else {
-            None
+            (None, None)
         };
 
         Arc::new(Self {
@@ -28,14 +33,18 @@ impl AppState {
             rate_limiter: RateLimiter::default(),
             db: None,
             deploy_queue,
+            deploy_executor,
         })
     }
 
     pub fn with_database(config: Config, db: Arc<Database>) -> Arc<Self> {
-        let deploy_queue = if config.modules.deploy.enabled {
-            Some(Arc::new(DeployQueue::default()))
+        let (deploy_queue, deploy_executor) = if config.modules.deploy.enabled {
+            (
+                Some(Arc::new(DeployQueue::default())),
+                Some(Arc::new(DeployExecutor::new())),
+            )
         } else {
-            None
+            (None, None)
         };
 
         Arc::new(Self {
@@ -44,6 +53,7 @@ impl AppState {
             rate_limiter: RateLimiter::default(),
             db: Some(db),
             deploy_queue,
+            deploy_executor,
         })
     }
 

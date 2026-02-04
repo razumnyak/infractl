@@ -235,6 +235,84 @@ impl DeployExecutor {
             .run_script(script, working_dir, &config.env, config.user.as_deref())
             .await
     }
+
+    /// Execute shutdown commands for a deployment
+    pub async fn shutdown(&self, config: &DeploymentConfig) -> DeployResult {
+        let start = Instant::now();
+        let mut output = String::new();
+
+        info!(
+            deployment = %config.name,
+            deploy_type = ?config.deploy_type,
+            "Shutting down deployment"
+        );
+
+        // If explicit shutdown commands are specified, use them
+        if !config.shutdown.is_empty() {
+            info!("Running shutdown commands");
+            for cmd in &config.shutdown {
+                match self
+                    .script
+                    .run_command(cmd, config.path.as_deref(), &config.env)
+                    .await
+                {
+                    Ok(cmd_output) => {
+                        output.push_str(&format!("[shutdown] {}\n{}\n", cmd, cmd_output));
+                    }
+                    Err(e) => {
+                        let error_msg = format!("Shutdown command failed: {}", e);
+                        error!("{}", error_msg);
+                        return DeployResult {
+                            success: false,
+                            output,
+                            error: Some(error_msg),
+                            duration_ms: start.elapsed().as_millis() as i64,
+                        };
+                    }
+                }
+            }
+        } else if config.deploy_type == DeployType::DockerPull {
+            // Default: docker compose down for docker_pull
+            if let Some(ref path) = config.path {
+                let compose_file = config
+                    .compose_file
+                    .as_deref()
+                    .unwrap_or("docker-compose.yaml");
+                let full_compose_path = format!("{}/{}", path, compose_file);
+
+                if std::path::Path::new(&full_compose_path).exists() {
+                    info!(compose_file = %full_compose_path, "Running docker compose down");
+                    match self.docker.down(&full_compose_path).await {
+                        Ok(docker_output) => {
+                            output.push_str(&format!(
+                                "[shutdown] docker compose down\n{}\n",
+                                docker_output
+                            ));
+                        }
+                        Err(e) => {
+                            let error_msg = format!("Docker compose down failed: {}", e);
+                            error!("{}", error_msg);
+                            return DeployResult {
+                                success: false,
+                                output,
+                                error: Some(error_msg),
+                                duration_ms: start.elapsed().as_millis() as i64,
+                            };
+                        }
+                    }
+                }
+            }
+        } else {
+            output.push_str("[shutdown] No shutdown commands configured\n");
+        }
+
+        DeployResult {
+            success: true,
+            output,
+            error: None,
+            duration_ms: start.elapsed().as_millis() as i64,
+        }
+    }
 }
 
 /// Parse file mappings from "from:to" format

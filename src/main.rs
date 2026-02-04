@@ -137,47 +137,209 @@ async fn main() -> Result<()> {
             return Ok(());
         }
 
-        // Deploy command (connect to running service)
-        Some(cli::Commands::Deploy { name, target }) => {
-            let config = config::load(&cli.config)?;
-            let port = config.server.port;
-            let base_url = format!("http://127.0.0.1:{}", port);
+        // Deploy command (connect to running service or forward to agent)
+        Some(cli::Commands::Deploy {
+            name,
+            target,
+            agent,
+            list,
+            permanent,
+            reset,
+        }) => {
+            let cfg = config::load(&cli.config)?;
+            let config_dir = cli
+                .config
+                .parent()
+                .unwrap_or(std::path::Path::new("/etc/infractl"));
+
+            // List deployments with agent assignments
+            if *list {
+                let assignments = config::load_assignments(config_dir);
+                println!("Available deployments:\n");
+                for deployment in &cfg.modules.deploy.deployments {
+                    let agent_info = assignments
+                        .get(&deployment.name)
+                        .map(|a| format!(" -> {}", a))
+                        .unwrap_or_default();
+                    println!(
+                        "  - {} ({:?}){}",
+                        deployment.name, deployment.deploy_type, agent_info
+                    );
+                }
+                println!("\nTotal: {}", cfg.modules.deploy.deployments.len());
+                return Ok(());
+            }
+
+            // Handle --reset/--stop: shutdown deployment and remove assignment
+            if *reset {
+                let name = name.clone().expect("name is required when using --reset");
+
+                // Find deployment config
+                let deployment = cfg
+                    .modules
+                    .deploy
+                    .deployments
+                    .iter()
+                    .find(|d| d.name == name)
+                    .ok_or_else(|| anyhow::anyhow!("Deployment not found: {}", name))?;
+
+                // Generate token
+                let jwt_manager = server::auth::JwtManager::new(&cfg.auth.jwt_secret);
+                let token = jwt_manager
+                    .generate_token("cli", 1)
+                    .map_err(|e| anyhow::anyhow!("Failed to generate token: {}", e))?;
+
+                // Determine target (--agent or saved assignment)
+                let target_agent = agent
+                    .clone()
+                    .or_else(|| config::load_assignments(config_dir).get(&name).cloned());
+
+                // Call shutdown endpoint
+                let client = reqwest::Client::new();
+                let (url, target_desc) = match &target_agent {
+                    Some(addr) => (
+                        format!("http://{}/webhook/shutdown/{}", addr, name),
+                        format!("agent {}", addr),
+                    ),
+                    None => (
+                        format!(
+                            "http://127.0.0.1:{}/webhook/shutdown/{}",
+                            cfg.server.port, name
+                        ),
+                        "local".to_string(),
+                    ),
+                };
+
+                println!("Stopping deployment '{}' on {}...", name, target_desc);
+
+                match client
+                    .post(&url)
+                    .header("Authorization", format!("Bearer {}", token))
+                    .json(deployment)
+                    .send()
+                    .await
+                {
+                    Ok(resp) => {
+                        let status = resp.status();
+                        let body = resp.text().await.unwrap_or_default();
+                        if status.is_success() {
+                            println!("Shutdown completed");
+                            println!("{}", body);
+                        } else {
+                            eprintln!("Shutdown failed ({}): {}", status, body);
+                            std::process::exit(1);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to connect: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+
+                // Clear assignment
+                config::remove_assignment(config_dir, &name)?;
+                println!("Assignment cleared for: {}", name);
+                return Ok(());
+            }
+
+            let name = name
+                .clone()
+                .expect("name is required when not using --list or --reset");
+
+            // Find deployment config
+            let deployment = cfg
+                .modules
+                .deploy
+                .deployments
+                .iter()
+                .find(|d| d.name == name)
+                .ok_or_else(|| anyhow::anyhow!("Deployment not found: {}", name))?;
 
             // Generate token from config
-            let jwt_manager = server::auth::JwtManager::new(&config.auth.jwt_secret);
+            let jwt_manager = server::auth::JwtManager::new(&cfg.auth.jwt_secret);
             let token = jwt_manager
                 .generate_token("cli", 1)
                 .map_err(|e| anyhow::anyhow!("Failed to generate token: {}", e))?;
 
-            let url = match target {
-                Some(addr) => format!("{}/api/agents/{}/deploy/{}", base_url, addr, name),
-                None => format!("{}/webhook/deploy/{}", base_url, name),
-            };
+            // Determine target agent (priority: --agent > --target > saved assignment)
+            let target_agent = agent
+                .clone()
+                .or_else(|| target.clone())
+                .or_else(|| config::load_assignments(config_dir).get(&name).cloned());
 
-            println!("Triggering deployment: {}", name);
+            // Save permanent assignment before deploying
+            if *permanent {
+                if let Some(ref addr) = agent {
+                    config::save_assignment(config_dir, &name, addr)?;
+                    println!("Saved assignment: {} -> {}", name, addr);
+                } else {
+                    eprintln!("--permanent requires --agent");
+                    std::process::exit(1);
+                }
+            }
 
-            let client = reqwest::Client::new();
-            match client
-                .post(&url)
-                .header("Authorization", format!("Bearer {}", token))
-                .send()
-                .await
-            {
-                Ok(resp) => {
-                    let status = resp.status();
-                    let body = resp.text().await.unwrap_or_default();
-                    if status.is_success() {
-                        println!("Deployment triggered successfully");
-                        println!("{}", body);
-                    } else {
-                        eprintln!("Deployment failed ({}): {}", status, body);
-                        std::process::exit(1);
+            // Execute deployment
+            match target_agent {
+                Some(addr) => {
+                    // Forward to agent
+                    println!("Forwarding deployment '{}' to agent: {}", name, addr);
+                    let url = format!("http://{}/webhook/deploy/{}", addr, name);
+
+                    let client = reqwest::Client::new();
+                    match client
+                        .post(&url)
+                        .header("Authorization", format!("Bearer {}", token))
+                        .json(deployment)
+                        .send()
+                        .await
+                    {
+                        Ok(resp) => {
+                            let status = resp.status();
+                            let body = resp.text().await.unwrap_or_default();
+                            if status.is_success() {
+                                println!("Deployment triggered successfully");
+                                println!("{}", body);
+                            } else {
+                                eprintln!("Deployment failed ({}): {}", status, body);
+                                std::process::exit(1);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to connect to agent {}: {}", addr, e);
+                            std::process::exit(1);
+                        }
                     }
                 }
-                Err(e) => {
-                    eprintln!("Failed to connect to infractl service: {}", e);
-                    eprintln!("Is the service running? Check: systemctl status infractl");
-                    std::process::exit(1);
+                None => {
+                    // Execute locally via running service
+                    println!("Triggering local deployment: {}", name);
+                    let port = cfg.server.port;
+                    let url = format!("http://127.0.0.1:{}/webhook/deploy/{}", port, name);
+
+                    let client = reqwest::Client::new();
+                    match client
+                        .post(&url)
+                        .header("Authorization", format!("Bearer {}", token))
+                        .send()
+                        .await
+                    {
+                        Ok(resp) => {
+                            let status = resp.status();
+                            let body = resp.text().await.unwrap_or_default();
+                            if status.is_success() {
+                                println!("Deployment triggered successfully");
+                                println!("{}", body);
+                            } else {
+                                eprintln!("Deployment failed ({}): {}", status, body);
+                                std::process::exit(1);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to connect to infractl service: {}", e);
+                            eprintln!("Is the service running? Check: systemctl status infractl");
+                            std::process::exit(1);
+                        }
+                    }
                 }
             }
             return Ok(());

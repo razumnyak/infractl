@@ -1,9 +1,11 @@
 use crate::error::{InfraError, Result};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::net::IpAddr;
 use std::path::Path;
+use tracing::{info, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -298,6 +300,13 @@ pub struct DeployConfig {
     pub default_timeout: String,
     #[serde(default)]
     pub deployments: Vec<DeploymentConfig>,
+    /// Path to external deployments (loads deployments.yaml and deployments.d/*.yaml)
+    #[serde(default = "default_external_deployments_path")]
+    pub external_deployments_path: Option<String>,
+}
+
+fn default_external_deployments_path() -> Option<String> {
+    Some("/etc/infractl".to_string())
 }
 
 fn default_work_dir() -> String {
@@ -340,6 +349,9 @@ pub struct DeploymentConfig {
     pub pre_deploy: Vec<String>,
     #[serde(default)]
     pub post_deploy: Vec<String>,
+    /// Commands to run when stopping deployment (default: docker compose down for docker_pull)
+    #[serde(default)]
+    pub shutdown: Vec<String>,
     #[serde(default)]
     pub timeout: Option<String>,
     #[serde(default)]
@@ -512,6 +524,53 @@ pub struct NotificationChannel {
     pub headers: HashMap<String, String>,
 }
 
+/// Load external deployments from a directory
+/// Looks for: {path}/deployments.yaml and {path}/deployments.d/*.yaml
+fn load_external_deployments(base_path: &str) -> Result<Vec<DeploymentConfig>> {
+    let mut deployments = Vec::new();
+    let base = Path::new(base_path);
+
+    // Load single file: deployments.yaml
+    let single_file = base.join("deployments.yaml");
+    if single_file.exists() {
+        let content = fs::read_to_string(&single_file).map_err(|e| {
+            InfraError::Config(format!("Failed to read {}: {}", single_file.display(), e))
+        })?;
+        let content = substitute_env_vars(&content)?;
+        let external: Vec<DeploymentConfig> = serde_yaml::from_str(&content).map_err(|e| {
+            InfraError::Config(format!("Failed to parse {}: {}", single_file.display(), e))
+        })?;
+        info!(file = %single_file.display(), count = external.len(), "Loaded external deployments");
+        deployments.extend(external);
+    }
+
+    // Load directory: deployments.d/*.yaml
+    let dir = base.join("deployments.d");
+    if dir.is_dir() {
+        let mut entries: Vec<_> = fs::read_dir(&dir)
+            .map_err(|e| InfraError::Config(format!("Failed to read {}: {}", dir.display(), e)))?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|e| e == "yaml" || e == "yml"))
+            .collect();
+        entries.sort(); // alphabetical order for predictability
+
+        for path in entries {
+            let content = fs::read_to_string(&path).map_err(|e| {
+                InfraError::Config(format!("Failed to read {}: {}", path.display(), e))
+            })?;
+            let content = substitute_env_vars(&content)?;
+            let external: Vec<DeploymentConfig> = serde_yaml::from_str(&content).map_err(|e| {
+                InfraError::Config(format!("Failed to parse {}: {}", path.display(), e))
+            })?;
+            info!(file = %path.display(), count = external.len(), "Loaded external deployments");
+            deployments.extend(external);
+        }
+    }
+
+    Ok(deployments)
+}
+
 /// Load config from file with environment variable substitution
 pub fn load(path: &Path) -> Result<Config> {
     let content = std::fs::read_to_string(path)
@@ -519,7 +578,36 @@ pub fn load(path: &Path) -> Result<Config> {
 
     let content = substitute_env_vars(&content)?;
 
-    let config: Config = serde_yaml::from_str(&content)?;
+    let mut config: Config = serde_yaml::from_str(&content)?;
+
+    // Load and merge external deployments
+    if let Some(ref ext_path) = config.modules.deploy.external_deployments_path {
+        match load_external_deployments(ext_path) {
+            Ok(external) => {
+                let base_names: HashSet<_> = config
+                    .modules
+                    .deploy
+                    .deployments
+                    .iter()
+                    .map(|d| d.name.clone())
+                    .collect();
+
+                for deployment in external {
+                    if base_names.contains(&deployment.name) {
+                        warn!(
+                            name = %deployment.name,
+                            "Ignoring duplicate deployment from external config"
+                        );
+                    } else {
+                        config.modules.deploy.deployments.push(deployment);
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(path = %ext_path, error = %e, "Failed to load external deployments");
+            }
+        }
+    }
 
     validate(&config)?;
 
@@ -623,6 +711,75 @@ fn validate(config: &Config) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Agent assignments file structure (modify.yaml)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AgentAssignments {
+    #[serde(default)]
+    pub assignments: HashMap<String, String>,
+}
+
+/// Load agent assignments from modify.yaml
+pub fn load_assignments(base_path: &Path) -> HashMap<String, String> {
+    let modify_path = base_path.join("modify.yaml");
+    if !modify_path.exists() {
+        return HashMap::new();
+    }
+
+    match fs::read_to_string(&modify_path) {
+        Ok(content) => match serde_yaml::from_str::<AgentAssignments>(&content) {
+            Ok(assignments) => assignments.assignments,
+            Err(e) => {
+                warn!(error = %e, "Failed to parse modify.yaml");
+                HashMap::new()
+            }
+        },
+        Err(e) => {
+            warn!(error = %e, "Failed to read modify.yaml");
+            HashMap::new()
+        }
+    }
+}
+
+/// Save agent assignment to modify.yaml
+pub fn save_assignment(base_path: &Path, name: &str, agent: &str) -> Result<()> {
+    let modify_path = base_path.join("modify.yaml");
+    let mut assignments = load_assignments(base_path);
+    assignments.insert(name.to_string(), agent.to_string());
+
+    let data = AgentAssignments { assignments };
+    let content = serde_yaml::to_string(&data)
+        .map_err(|e| InfraError::Config(format!("Failed to serialize assignments: {}", e)))?;
+
+    fs::write(&modify_path, content).map_err(|e| {
+        InfraError::Config(format!("Failed to write {}: {}", modify_path.display(), e))
+    })?;
+
+    info!(name = %name, agent = %agent, "Saved agent assignment");
+    Ok(())
+}
+
+/// Remove agent assignment from modify.yaml
+pub fn remove_assignment(base_path: &Path, name: &str) -> Result<()> {
+    let modify_path = base_path.join("modify.yaml");
+    let mut assignments = load_assignments(base_path);
+
+    if assignments.remove(name).is_none() {
+        warn!(name = %name, "No assignment found to remove");
+        return Ok(());
+    }
+
+    let data = AgentAssignments { assignments };
+    let content = serde_yaml::to_string(&data)
+        .map_err(|e| InfraError::Config(format!("Failed to serialize assignments: {}", e)))?;
+
+    fs::write(&modify_path, content).map_err(|e| {
+        InfraError::Config(format!("Failed to write {}: {}", modify_path.display(), e))
+    })?;
+
+    info!(name = %name, "Removed agent assignment");
     Ok(())
 }
 

@@ -1,3 +1,4 @@
+use crate::config::DeploymentConfig;
 use crate::deploy::DeployJob;
 use crate::server::middleware::ErrorResponse;
 use crate::server::AppState;
@@ -35,27 +36,36 @@ pub struct TriggerRequest {
 }
 
 /// POST /webhook/deploy/:name - Trigger a deployment
+/// Body can optionally contain DeploymentConfig (forwarded from Home)
 pub async fn trigger_deploy(
     State(state): State<Arc<AppState>>,
     Path(deployment_name): Path<String>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<WebhookResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Find the deployment config
-    let deployment = state
-        .config
-        .modules
-        .deploy
-        .deployments
-        .iter()
-        .find(|d| d.name == deployment_name)
-        .cloned()
-        .ok_or_else(|| {
-            ErrorResponse::new(
-                StatusCode::NOT_FOUND,
-                &format!("Deployment '{}' not found", deployment_name),
-            )
-        })?;
+    // Try to parse body as DeploymentConfig (forwarded from Home)
+    // If parsing fails or body is empty, look up locally
+    let deployment = if !body.is_empty() {
+        serde_json::from_slice::<DeploymentConfig>(&body).ok()
+    } else {
+        None
+    }
+    .or_else(|| {
+        state
+            .config
+            .modules
+            .deploy
+            .deployments
+            .iter()
+            .find(|d| d.name == deployment_name)
+            .cloned()
+    })
+    .ok_or_else(|| {
+        ErrorResponse::new(
+            StatusCode::NOT_FOUND,
+            &format!("Deployment '{}' not found", deployment_name),
+        )
+    })?;
 
     // Find webhook config for this deployment
     let webhook_config = state
@@ -109,6 +119,77 @@ pub async fn trigger_deploy(
         message: format!("Deployment '{}' queued", deployment_name),
         job_id: Some(job_id),
     }))
+}
+
+/// POST /webhook/shutdown/:name - Shutdown a deployment
+/// Body can optionally contain DeploymentConfig (forwarded from Home)
+pub async fn trigger_shutdown(
+    State(state): State<Arc<AppState>>,
+    Path(deployment_name): Path<String>,
+    body: Bytes,
+) -> Result<Json<WebhookResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Try to parse body as DeploymentConfig (forwarded from Home)
+    // If parsing fails or body is empty, look up locally
+    let deployment = if !body.is_empty() {
+        serde_json::from_slice::<DeploymentConfig>(&body).ok()
+    } else {
+        None
+    }
+    .or_else(|| {
+        state
+            .config
+            .modules
+            .deploy
+            .deployments
+            .iter()
+            .find(|d| d.name == deployment_name)
+            .cloned()
+    })
+    .ok_or_else(|| {
+        ErrorResponse::new(
+            StatusCode::NOT_FOUND,
+            &format!("Deployment '{}' not found", deployment_name),
+        )
+    })?;
+
+    // Get executor
+    let executor = state.deploy_executor.as_ref().ok_or_else(|| {
+        ErrorResponse::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Deploy executor not available",
+        )
+    })?;
+
+    info!(deployment = %deployment_name, "Executing shutdown");
+
+    // Execute shutdown synchronously (not queued)
+    let result = executor.shutdown(&deployment).await;
+
+    if result.success {
+        info!(
+            deployment = %deployment_name,
+            duration_ms = result.duration_ms,
+            "Shutdown completed successfully"
+        );
+        Ok(Json(WebhookResponse {
+            success: true,
+            message: format!(
+                "Deployment '{}' shutdown complete\n{}",
+                deployment_name, result.output
+            ),
+            job_id: None,
+        }))
+    } else {
+        warn!(
+            deployment = %deployment_name,
+            error = ?result.error,
+            "Shutdown failed"
+        );
+        Err(ErrorResponse::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("Shutdown failed: {}", result.error.unwrap_or_default()),
+        ))
+    }
 }
 
 /// GET /webhook/status/:job_id - Get deployment job status

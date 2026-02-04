@@ -17,6 +17,7 @@ use tracing::{error, info, warn};
 #[derive(Debug, Clone)]
 pub struct DeployResult {
     pub success: bool,
+    pub skipped: bool,
     pub output: String,
     pub error: Option<String>,
     pub duration_ms: i64,
@@ -91,7 +92,7 @@ pub async fn start_worker(
                 );
             }
 
-            if result.success {
+            if result.success && !result.skipped {
                 info!(
                     deployment = %job.deployment_name,
                     duration_ms = result.duration_ms,
@@ -102,6 +103,11 @@ pub async fn start_worker(
                 if !job.config.trigger.is_empty() {
                     process_triggers(&job, &queue, &deployments).await;
                 }
+            } else if result.skipped {
+                info!(
+                    deployment = %job.deployment_name,
+                    "Deployment skipped (no changes), triggers not fired"
+                );
             } else {
                 error!(
                     deployment = %job.deployment_name,

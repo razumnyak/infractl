@@ -1,3 +1,4 @@
+use crate::config::DeployStrategy;
 use std::path::Path;
 use std::process::Stdio;
 use tokio::process::Command;
@@ -16,6 +17,7 @@ impl DockerDeploy {
         compose_file: &str,
         services: &[String],
         prune: bool,
+        strategy: &DeployStrategy,
     ) -> Result<String, String> {
         let compose_path = Path::new(compose_file);
         let working_dir = compose_path
@@ -37,12 +39,45 @@ impl DockerDeploy {
             .await?;
         output.push_str(&format!("[docker compose pull]\n{}\n", pull_output));
 
-        // Restart containers
-        info!("Restarting containers");
-        let up_output = self
-            .run_compose_command(&working_dir, &compose_filename, "up", services)
-            .await?;
-        output.push_str(&format!("[docker compose up -d]\n{}\n", up_output));
+        // Apply strategy
+        match strategy {
+            DeployStrategy::Default => {
+                info!("Starting containers (default strategy)");
+                let up_output = self
+                    .run_compose_command(&working_dir, &compose_filename, "up", services)
+                    .await?;
+                output.push_str(&format!("[docker compose up -d]\n{}\n", up_output));
+            }
+            DeployStrategy::ForceRecreate => {
+                info!("Starting containers (force-recreate strategy)");
+                let up_output = self
+                    .run_compose_command_extra(
+                        &working_dir,
+                        &compose_filename,
+                        "up",
+                        &["--force-recreate"],
+                        services,
+                    )
+                    .await?;
+                output.push_str(&format!(
+                    "[docker compose up -d --force-recreate]\n{}\n",
+                    up_output
+                ));
+            }
+            DeployStrategy::Restart => {
+                // First bring up (in case not running), then restart
+                info!("Starting containers then restarting (restart strategy)");
+                let up_output = self
+                    .run_compose_command(&working_dir, &compose_filename, "up", services)
+                    .await?;
+                output.push_str(&format!("[docker compose up -d]\n{}\n", up_output));
+
+                let restart_output = self
+                    .run_compose_command(&working_dir, &compose_filename, "restart", services)
+                    .await?;
+                output.push_str(&format!("[docker compose restart]\n{}\n", restart_output));
+            }
+        }
 
         // Prune old images if requested
         if prune {
@@ -101,6 +136,18 @@ impl DockerDeploy {
         action: &str,
         services: &[String],
     ) -> Result<String, String> {
+        self.run_compose_command_extra(working_dir, compose_file, action, &[], services)
+            .await
+    }
+
+    async fn run_compose_command_extra(
+        &self,
+        working_dir: &str,
+        compose_file: &str,
+        action: &str,
+        extra_args: &[&str],
+        services: &[String],
+    ) -> Result<String, String> {
         let mut args = vec!["compose", "-f", compose_file, action];
 
         // Add -d flag for "up" command
@@ -108,6 +155,9 @@ impl DockerDeploy {
             args.push("-d");
             args.push("--remove-orphans");
         }
+
+        // Add extra flags (e.g., --force-recreate)
+        args.extend(extra_args);
 
         // Add specific services if provided
         let service_refs: Vec<&str> = services.iter().map(|s| s.as_str()).collect();

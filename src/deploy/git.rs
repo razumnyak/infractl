@@ -11,13 +11,14 @@ impl GitDeploy {
     }
 
     /// Pull latest changes from remote
+    /// Returns (output, has_changes) where has_changes indicates if commit changed
     pub async fn pull(
         &self,
         repo_path: &str,
         remote: &str,
         branch: &str,
         ssh_key: Option<&str>,
-    ) -> Result<String, String> {
+    ) -> Result<(String, bool), String> {
         let path = Path::new(repo_path);
 
         if !path.exists() {
@@ -25,6 +26,14 @@ impl GitDeploy {
         }
 
         let mut output = String::new();
+
+        // Get commit hash BEFORE fetch
+        let before_commit = self
+            .run_git_command(repo_path, &["rev-parse", "HEAD"], None)
+            .await
+            .unwrap_or_default()
+            .trim()
+            .to_string();
 
         // Set up SSH command if key is provided
         let git_ssh_command = ssh_key.map(|key| {
@@ -59,13 +68,30 @@ impl GitDeploy {
             .await?;
         output.push_str(&format!("[git clean] {}\n", clean_output));
 
-        // Get current commit
-        let commit = self
+        // Get commit hash AFTER reset
+        let after_commit = self
+            .run_git_command(repo_path, &["rev-parse", "HEAD"], None)
+            .await?
+            .trim()
+            .to_string();
+
+        let short_commit = self
             .run_git_command(repo_path, &["rev-parse", "--short", "HEAD"], None)
             .await?;
-        output.push_str(&format!("[commit] {}\n", commit.trim()));
+        output.push_str(&format!("[commit] {}\n", short_commit.trim()));
 
-        Ok(output)
+        let has_changes = before_commit != after_commit;
+        if has_changes {
+            output.push_str(&format!(
+                "[changes] {} -> {}\n",
+                &before_commit[..8.min(before_commit.len())],
+                &after_commit[..8.min(after_commit.len())]
+            ));
+        } else {
+            output.push_str("[no changes] already up to date\n");
+        }
+
+        Ok((output, has_changes))
     }
 
     /// Clone a repository

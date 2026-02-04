@@ -365,6 +365,9 @@ pub struct DeploymentConfig {
     /// Continue pipeline if triggered deployment fails
     #[serde(default)]
     pub continue_on_failure: bool,
+    /// Docker deploy strategy (default, force_recreate, restart)
+    #[serde(default)]
+    pub strategy: Option<DeployStrategy>,
 }
 
 /// Trigger can be a single string or array of strings
@@ -406,6 +409,19 @@ pub enum DeployType {
     GitPull,
     DockerPull,
     CustomScript,
+}
+
+/// Docker deploy strategy
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DeployStrategy {
+    /// docker compose up -d (default — only recreates if compose definition changed)
+    #[default]
+    Default,
+    /// docker compose up -d --force-recreate (recreates container, picks up volume changes)
+    ForceRecreate,
+    /// docker compose restart (restart process in existing container, fastest)
+    Restart,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

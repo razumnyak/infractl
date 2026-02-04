@@ -48,6 +48,7 @@ impl DeployExecutor {
                         error!("{}", error_msg);
                         return DeployResult {
                             success: false,
+                            skipped: false,
                             output,
                             error: Some(error_msg),
                             duration_ms: start.elapsed().as_millis() as i64,
@@ -58,8 +59,17 @@ impl DeployExecutor {
         }
 
         // Execute main deployment based on type
+        let mut skipped = false;
         let result = match config.deploy_type {
-            DeployType::GitPull => self.execute_git_pull(config).await,
+            DeployType::GitPull => match self.execute_git_pull(config).await {
+                Ok((deploy_output, has_changes)) => {
+                    if !has_changes {
+                        skipped = true;
+                    }
+                    Ok(deploy_output)
+                }
+                Err(e) => Err(e),
+            },
             DeployType::DockerPull => self.execute_docker_pull(config).await,
             DeployType::CustomScript => self.execute_custom_script(config).await,
         };
@@ -73,6 +83,7 @@ impl DeployExecutor {
                 error!("{}", error_msg);
                 return DeployResult {
                     success: false,
+                    skipped: false,
                     output,
                     error: Some(error_msg),
                     duration_ms: start.elapsed().as_millis() as i64,
@@ -80,8 +91,8 @@ impl DeployExecutor {
             }
         }
 
-        // Run post-deploy commands
-        if !config.post_deploy.is_empty() {
+        // Run post-deploy commands (skip if no changes detected)
+        if !skipped && !config.post_deploy.is_empty() {
             info!("Running post-deploy commands");
             for cmd in &config.post_deploy {
                 match self
@@ -97,6 +108,7 @@ impl DeployExecutor {
                         error!("{}", error_msg);
                         return DeployResult {
                             success: false,
+                            skipped: false,
                             output,
                             error: Some(error_msg),
                             duration_ms: start.elapsed().as_millis() as i64,
@@ -108,13 +120,14 @@ impl DeployExecutor {
 
         DeployResult {
             success: true,
+            skipped,
             output,
             error: None,
             duration_ms: start.elapsed().as_millis() as i64,
         }
     }
 
-    async fn execute_git_pull(&self, config: &DeploymentConfig) -> Result<String, String> {
+    async fn execute_git_pull(&self, config: &DeploymentConfig) -> Result<(String, bool), String> {
         let path = config
             .path
             .as_ref()
@@ -124,7 +137,7 @@ impl DeployExecutor {
         let remote = config.remote.as_deref().unwrap_or("origin");
         let git_dir = std::path::Path::new(path).join(".git");
 
-        // Check if repo exists, if not - clone first
+        // Check if repo exists, if not - clone first (always has changes)
         if !git_dir.exists() {
             let repo_url = config
                 .repo
@@ -146,10 +159,10 @@ impl DeployExecutor {
                 .clone(repo_url, path, Some(branch), config.ssh_key.as_deref())
                 .await?;
 
-            return Ok(format!("[git clone] {}\n", clone_output));
+            return Ok((format!("[git clone] {}\n", clone_output), true));
         }
 
-        // Repo exists, do pull
+        // Repo exists, do pull — returns (output, has_changes)
         self.git
             .pull(path, remote, branch, config.ssh_key.as_deref())
             .await
@@ -214,9 +227,15 @@ impl DeployExecutor {
         }
 
         // Run docker compose
+        let strategy = config.strategy.clone().unwrap_or_default();
         let docker_output = self
             .docker
-            .pull_and_restart(&full_compose_path, config.services.as_slice(), config.prune)
+            .pull_and_restart(
+                &full_compose_path,
+                config.services.as_slice(),
+                config.prune,
+                &strategy,
+            )
             .await?;
         output.push_str(&docker_output);
 
@@ -264,6 +283,7 @@ impl DeployExecutor {
                         error!("{}", error_msg);
                         return DeployResult {
                             success: false,
+                            skipped: false,
                             output,
                             error: Some(error_msg),
                             duration_ms: start.elapsed().as_millis() as i64,
@@ -294,6 +314,7 @@ impl DeployExecutor {
                             error!("{}", error_msg);
                             return DeployResult {
                                 success: false,
+                                skipped: false,
                                 output,
                                 error: Some(error_msg),
                                 duration_ms: start.elapsed().as_millis() as i64,
@@ -308,6 +329,7 @@ impl DeployExecutor {
 
         DeployResult {
             success: true,
+            skipped: false,
             output,
             error: None,
             duration_ms: start.elapsed().as_millis() as i64,

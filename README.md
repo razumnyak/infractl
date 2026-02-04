@@ -9,7 +9,10 @@ Infrastructure monitoring and deployment agent for self-hosted servers.
 - **System Monitoring**: CPU, RAM, disk, network metrics
 - **Docker Integration**: Container stats, compose project tracking
 - **Auto-Deploy**: Git pull, Docker pull, custom scripts via webhooks
-- **Distributed Architecture**: Home (central) + Agent (worker) modes
+- **Multi-Stage Pipelines**: Trigger chains with change detection (skip if no diff)
+- **Deploy Strategies**: Default, force-recreate, restart for Docker deployments
+- **Git Files**: Fetch specific files/dirs from git without full clone
+- **Distributed Architecture**: Home (central) + Agent (worker) modes with agent assignments
 - **Web Dashboard**: Real-time metrics visualization
 - **Auto-Update**: Self-update from GitHub Releases
 
@@ -48,7 +51,7 @@ curl -fsSL https://github.com/razumnyak/infractl/releases/latest/download/instal
 Or with specific version and mode:
 
 ```bash
-curl -fsSL ... | sudo bash -s -- --version v0.1.11 --mode home
+curl -fsSL ... | sudo bash -s -- --version v0.1.12 --mode home
 ```
 
 ### Docker
@@ -97,6 +100,7 @@ infractl --config /etc/infractl/config.yaml
 | `GET /api/agents` | Home | Agent status |
 | `GET /api/metrics` | Home | Metrics history |
 | `POST /webhook/deploy/{name}` | Both | Trigger deployment |
+| `POST /webhook/shutdown/{name}` | Both | Stop deployment |
 
 ## Requirements
 

@@ -124,7 +124,7 @@ impl GitDeploy {
     }
 
     /// Fetch specific files from a git repository
-    /// Uses git archive to download only the specified files
+    /// Uses shallow clone + copy (compatible with GitHub SSH)
     /// file_mappings format: [(from_path, to_path)] where trailing / means directory
     pub async fn fetch_files(
         &self,
@@ -141,14 +141,13 @@ impl GitDeploy {
         fs::create_dir_all(dest_path)
             .map_err(|e| format!("Failed to create directory {}: {}", dest_path, e))?;
 
-        // Create temp directory for extraction (use /tmp to avoid permission issues)
+        // Create temp directory for shallow clone
         let temp_dir = format!("/tmp/infractl_git_temp_{}", std::process::id());
-        fs::create_dir_all(&temp_dir)
-            .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+        // Clean up any leftover from previous run
+        let _ = fs::remove_dir_all(&temp_dir);
 
         let mut output = String::new();
 
-        // Collect source paths for git archive
         let source_paths: Vec<&str> = file_mappings
             .iter()
             .map(|(from, _)| from.as_str())
@@ -158,15 +157,7 @@ impl GitDeploy {
             repo = %repo_url,
             branch = %branch,
             files = ?source_paths,
-            "Fetching files from git"
-        );
-
-        // Build git archive command
-        // git archive --remote=<repo> <branch> <paths...> | tar -x -C <temp>
-        let paths_str = source_paths.join(" ");
-        let archive_cmd = format!(
-            "git archive --remote={} {} {} | tar -x -C {}",
-            repo_url, branch, paths_str, temp_dir
+            "Fetching files from git (shallow clone)"
         );
 
         let git_ssh_command = ssh_key.map(|key| {
@@ -176,20 +167,23 @@ impl GitDeploy {
             )
         });
 
-        // Run archive command
-        let archive_result = self
-            .run_shell_command(&archive_cmd, ".", git_ssh_command.as_deref())
+        // Shallow clone the repo
+        let clone_result = self
+            .run_git_command(
+                ".",
+                &["clone", "--depth", "1", "-b", branch, repo_url, &temp_dir],
+                git_ssh_command.as_deref(),
+            )
             .await;
 
-        if let Err(e) = &archive_result {
-            // Cleanup temp dir on error
+        if let Err(e) = &clone_result {
             let _ = fs::remove_dir_all(&temp_dir);
-            return Err(e.clone());
+            return Err(format!("git clone failed: {}", e));
         }
 
         output.push_str(&format!(
-            "[git archive] {}\n",
-            archive_result.unwrap_or_default()
+            "[git clone --depth 1] {}\n",
+            clone_result.unwrap_or_default().trim()
         ));
 
         // Copy files according to mappings
@@ -200,7 +194,6 @@ impl GitDeploy {
             let is_dir = from.ends_with('/') || to.ends_with('/');
 
             if is_dir {
-                // Copy directory recursively
                 if src.is_dir() {
                     fs::create_dir_all(&dst)
                         .map_err(|e| format!("Failed to create dir {}: {}", dst.display(), e))?;
@@ -210,10 +203,10 @@ impl GitDeploy {
 
                     output.push_str(&format!("[copy] {}/ -> {}/\n", from, to));
                 } else {
+                    let _ = fs::remove_dir_all(&temp_dir);
                     return Err(format!("Expected directory but found file: {}", from));
                 }
             } else {
-                // Copy single file
                 if let Some(parent) = dst.parent() {
                     fs::create_dir_all(parent)
                         .map_err(|e| format!("Failed to create parent dir: {}", e))?;
@@ -224,7 +217,8 @@ impl GitDeploy {
                         .map_err(|e| format!("Failed to copy {} to {}: {}", from, to, e))?;
                     output.push_str(&format!("[copy] {} -> {}\n", from, to));
                 } else {
-                    return Err(format!("File not found in archive: {}", from));
+                    let _ = fs::remove_dir_all(&temp_dir);
+                    return Err(format!("File not found in repo: {}", from));
                 }
             }
         }
@@ -233,40 +227,6 @@ impl GitDeploy {
         let _ = fs::remove_dir_all(&temp_dir);
 
         Ok(output)
-    }
-
-    async fn run_shell_command(
-        &self,
-        command: &str,
-        working_dir: &str,
-        git_ssh_command: Option<&str>,
-    ) -> Result<String, String> {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c")
-            .arg(command)
-            .current_dir(working_dir)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        if let Some(ssh_cmd) = git_ssh_command {
-            cmd.env("GIT_SSH_COMMAND", ssh_cmd);
-        }
-
-        debug!(command = %command, "Running shell command");
-
-        let output = cmd
-            .output()
-            .await
-            .map_err(|e| format!("Failed to execute command: {}", e))?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
-        if output.status.success() {
-            Ok(format!("{}{}", stdout, stderr))
-        } else {
-            Err(format!("Command failed: {}\n{}", stderr, stdout))
-        }
     }
 
     /// Get current branch name

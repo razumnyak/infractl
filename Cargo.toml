@@ -1,6 +1,6 @@
 [package]
 name = "infractl"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2021"
 authors = ["Volodymyr Razumniak <me@mozg.dev>"]
 description = "Infrastructure monitoring and deployment agent"

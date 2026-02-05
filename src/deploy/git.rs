@@ -38,8 +38,8 @@ impl GitDeploy {
         // Set up SSH command if key is provided
         let git_ssh_command = ssh_key.map(|key| {
             format!(
-                "ssh -i {} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null",
-                key
+                "ssh -i '{}' -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null",
+                key.replace('\'', "'\\''")
             )
         });
 
@@ -114,8 +114,8 @@ impl GitDeploy {
 
         let git_ssh_command = ssh_key.map(|key| {
             format!(
-                "ssh -i {} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null",
-                key
+                "ssh -i '{}' -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null",
+                key.replace('\'', "'\\''")
             )
         });
 
@@ -141,10 +141,10 @@ impl GitDeploy {
         fs::create_dir_all(dest_path)
             .map_err(|e| format!("Failed to create directory {}: {}", dest_path, e))?;
 
-        // Create temp directory for shallow clone
-        let temp_dir = format!("/tmp/infractl_git_temp_{}", std::process::id());
-        // Clean up any leftover from previous run
-        let _ = fs::remove_dir_all(&temp_dir);
+        // Create secure temp directory (random name, auto-cleanup on drop)
+        let temp_dir_handle =
+            tempfile::tempdir().map_err(|e| format!("Failed to create temp directory: {}", e))?;
+        let temp_dir = temp_dir_handle.path().to_string_lossy().to_string();
 
         let mut output = String::new();
 
@@ -162,8 +162,8 @@ impl GitDeploy {
 
         let git_ssh_command = ssh_key.map(|key| {
             format!(
-                "ssh -i {} -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null",
-                key
+                "ssh -i '{}' -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null",
+                key.replace('\'', "'\\''")
             )
         });
 
@@ -177,7 +177,7 @@ impl GitDeploy {
             .await;
 
         if let Err(e) = &clone_result {
-            let _ = fs::remove_dir_all(&temp_dir);
+            // temp_dir_handle drops here, auto-cleaning
             return Err(format!("git clone failed: {}", e));
         }
 
@@ -187,9 +187,13 @@ impl GitDeploy {
         ));
 
         // Copy files according to mappings
+        let base_path = Path::new(dest_path);
         for (from, to) in file_mappings {
             let src = Path::new(&temp_dir).join(from.trim_end_matches('/'));
-            let dst = Path::new(dest_path).join(to.trim_end_matches('/'));
+            let dst_raw = base_path.join(to.trim_end_matches('/'));
+
+            // Validate path containment (prevent path traversal attacks)
+            let dst = validate_path_containment(base_path, &dst_raw)?;
 
             let is_dir = from.ends_with('/') || to.ends_with('/');
 
@@ -203,29 +207,21 @@ impl GitDeploy {
 
                     output.push_str(&format!("[copy] {}/ -> {}/\n", from, to));
                 } else {
-                    let _ = fs::remove_dir_all(&temp_dir);
                     return Err(format!("Expected directory but found file: {}", from));
                 }
             } else {
-                if let Some(parent) = dst.parent() {
-                    fs::create_dir_all(parent)
-                        .map_err(|e| format!("Failed to create parent dir: {}", e))?;
-                }
-
+                // Parent directory already created by validate_path_containment
                 if src.exists() {
                     fs::copy(&src, &dst)
                         .map_err(|e| format!("Failed to copy {} to {}: {}", from, to, e))?;
                     output.push_str(&format!("[copy] {} -> {}\n", from, to));
                 } else {
-                    let _ = fs::remove_dir_all(&temp_dir);
                     return Err(format!("File not found in repo: {}", from));
                 }
             }
         }
 
-        // Cleanup temp directory
-        let _ = fs::remove_dir_all(&temp_dir);
-
+        // temp_dir_handle drops here, auto-cleaning
         Ok(output)
     }
 
@@ -315,4 +311,40 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::
     }
 
     Ok(())
+}
+
+/// Validate that target path stays within base path (prevent path traversal)
+fn validate_path_containment(
+    base: &std::path::Path,
+    target: &std::path::Path,
+) -> Result<std::path::PathBuf, String> {
+    use std::fs;
+
+    let canonical_base = base
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve base path '{}': {}", base.display(), e))?;
+
+    // For target: if it doesn't exist, canonicalize parent and append filename
+    let canonical_target = if target.exists() {
+        target.canonicalize()
+    } else {
+        let parent = target
+            .parent()
+            .ok_or_else(|| format!("Target path '{}' has no parent directory", target.display()))?;
+        fs::create_dir_all(parent).map_err(|e| format!("Cannot create parent directory: {}", e))?;
+        parent
+            .canonicalize()
+            .map(|p| p.join(target.file_name().unwrap()))
+    }
+    .map_err(|e| format!("Cannot resolve target path '{}': {}", target.display(), e))?;
+
+    if !canonical_target.starts_with(&canonical_base) {
+        return Err(format!(
+            "Path traversal detected: '{}' escapes base directory '{}'",
+            target.display(),
+            base.display()
+        ));
+    }
+
+    Ok(canonical_target)
 }

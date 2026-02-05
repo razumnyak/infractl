@@ -1,3 +1,4 @@
+use crate::config::DeploymentConfig;
 use crate::server::middleware::ErrorResponse;
 use crate::server::AppState;
 use crate::storage::{AggregationType, DeployRecord, MetricRecord, MetricsQuery};
@@ -245,6 +246,28 @@ pub async fn get_all_agent_statuses(
         "agents": statuses,
         "count": statuses.len()
     })))
+}
+
+/// GET /api/deployments/:name - Get full deployment config by name
+pub async fn get_deployment_config(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+) -> Result<Json<DeploymentConfig>, (StatusCode, Json<ErrorResponse>)> {
+    state
+        .config
+        .modules
+        .deploy
+        .deployments
+        .iter()
+        .find(|d| d.name == name)
+        .cloned()
+        .map(Json)
+        .ok_or_else(|| {
+            ErrorResponse::new(
+                StatusCode::NOT_FOUND,
+                &format!("Deployment '{}' not found", name),
+            )
+        })
 }
 
 /// GET /api/deployments - Get configured deployments list

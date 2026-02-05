@@ -47,6 +47,9 @@ pub struct ServerConfig {
     pub isolation_mode: bool,
     #[serde(default = "default_allowed_networks")]
     pub allowed_networks: Vec<String>,
+    /// Home server address for Agent → Home config fetch (e.g. "10.0.0.1:8111")
+    #[serde(default)]
+    pub home_address: Option<String>,
 }
 
 fn default_bind() -> String {
@@ -77,6 +80,7 @@ impl Default for ServerConfig {
             port: default_port(),
             isolation_mode: true,
             allowed_networks: default_allowed_networks(),
+            home_address: None,
         }
     }
 }

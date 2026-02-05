@@ -174,8 +174,8 @@ async fn main() -> Result<()> {
             if *reset {
                 let name = name.clone().expect("name is required when using --reset");
 
-                // Find deployment config
-                let deployment = cfg
+                // Validate deployment exists in local config
+                let _deployment = cfg
                     .modules
                     .deploy
                     .deployments
@@ -215,7 +215,6 @@ async fn main() -> Result<()> {
                 match client
                     .post(&url)
                     .header("Authorization", format!("Bearer {}", token))
-                    .json(deployment)
                     .send()
                     .await
                 {
@@ -246,8 +245,8 @@ async fn main() -> Result<()> {
                 .clone()
                 .expect("name is required when not using --list or --reset");
 
-            // Find deployment config
-            let deployment = cfg
+            // Validate deployment exists in local config
+            let _deployment = cfg
                 .modules
                 .deploy
                 .deployments
@@ -289,7 +288,6 @@ async fn main() -> Result<()> {
                     match client
                         .post(&url)
                         .header("Authorization", format!("Bearer {}", token))
-                        .json(deployment)
                         .send()
                         .await
                     {

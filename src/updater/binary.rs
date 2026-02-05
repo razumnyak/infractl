@@ -105,6 +105,20 @@ impl BinaryUpdater {
         // Write new binary to temp file
         let temp_path = self.current_exe.with_extension("new");
 
+        // Security: refuse to write if temp_path is a symlink (potential attack)
+        if temp_path.is_symlink() {
+            return Err(format!(
+                "Temp path {} is a symlink (refusing to proceed)",
+                temp_path.display()
+            ));
+        }
+
+        // Remove existing temp file if any (from previous failed update)
+        if temp_path.exists() {
+            fs::remove_file(&temp_path)
+                .map_err(|e| format!("Failed to remove stale temp file: {}", e))?;
+        }
+
         let mut temp_file =
             File::create(&temp_path).map_err(|e| format!("Failed to create temp file: {}", e))?;
 

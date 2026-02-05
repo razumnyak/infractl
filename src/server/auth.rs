@@ -92,23 +92,34 @@ impl std::fmt::Display for JwtError {
 
 impl std::error::Error for JwtError {}
 
-/// Parse TTL string like "24h", "7d", "30m" to hours
-#[allow(dead_code)]
+/// Parse TTL string like "24h", "7days", "1week" to hours using humantime
+/// Returns error on invalid format instead of silent fallback
 pub fn parse_ttl_to_hours(ttl: &str) -> i64 {
     let ttl = ttl.trim();
     if ttl.is_empty() {
         return 24; // default
     }
 
-    let (num_str, unit) = ttl.split_at(ttl.len() - 1);
-    let num: i64 = num_str.parse().unwrap_or(24);
-
-    match unit {
-        "h" => num,
-        "d" => num * 24,
-        "m" => num / 60,
-        "w" => num * 24 * 7,
-        _ => 24,
+    match humantime::parse_duration(ttl) {
+        Ok(duration) => {
+            let hours = duration.as_secs() / 3600;
+            if hours == 0 {
+                eprintln!(
+                    "Warning: TTL '{}' is less than 1 hour, using 1 hour minimum",
+                    ttl
+                );
+                1
+            } else {
+                hours as i64
+            }
+        }
+        Err(e) => {
+            eprintln!(
+                "Error: Invalid TTL format '{}': {}. Use formats like '24h', '7days', '1week'",
+                ttl, e
+            );
+            std::process::exit(1);
+        }
     }
 }
 

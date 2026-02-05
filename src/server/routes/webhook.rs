@@ -1,5 +1,6 @@
 use crate::config::DeploymentConfig;
 use crate::deploy::DeployJob;
+use crate::server::auth::JwtManager;
 use crate::server::middleware::ErrorResponse;
 use crate::server::AppState;
 use axum::{
@@ -12,6 +13,7 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::sync::Arc;
+use std::time::Duration;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use tracing::{info, warn};
@@ -36,36 +38,35 @@ pub struct TriggerRequest {
 }
 
 /// POST /webhook/deploy/:name - Trigger a deployment
-/// Body can optionally contain DeploymentConfig (forwarded from Home)
+/// Config is resolved locally or fetched from Home (never accepted from body)
 pub async fn trigger_deploy(
     State(state): State<Arc<AppState>>,
     Path(deployment_name): Path<String>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<WebhookResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Try to parse body as DeploymentConfig (forwarded from Home)
-    // If parsing fails or body is empty, look up locally
-    let deployment = if !body.is_empty() {
-        serde_json::from_slice::<DeploymentConfig>(&body).ok()
-    } else {
-        None
-    }
-    .or_else(|| {
-        state
-            .config
-            .modules
-            .deploy
-            .deployments
-            .iter()
-            .find(|d| d.name == deployment_name)
-            .cloned()
-    })
-    .ok_or_else(|| {
-        ErrorResponse::new(
-            StatusCode::NOT_FOUND,
-            &format!("Deployment '{}' not found", deployment_name),
-        )
-    })?;
+    // Look up deployment in local config
+    let deployment = state
+        .config
+        .modules
+        .deploy
+        .deployments
+        .iter()
+        .find(|d| d.name == deployment_name)
+        .cloned();
+
+    // If not found locally, try fetching from Home
+    let deployment = match deployment {
+        Some(d) => d,
+        None => fetch_from_home(&state, &deployment_name)
+            .await
+            .map_err(|e| {
+                ErrorResponse::new(
+                    StatusCode::NOT_FOUND,
+                    &format!("Deployment '{}': {}", deployment_name, e),
+                )
+            })?,
+    };
 
     // Find webhook config for this deployment
     let webhook_config = state
@@ -122,35 +123,34 @@ pub async fn trigger_deploy(
 }
 
 /// POST /webhook/shutdown/:name - Shutdown a deployment
-/// Body can optionally contain DeploymentConfig (forwarded from Home)
+/// Config is resolved locally or fetched from Home (never accepted from body)
 pub async fn trigger_shutdown(
     State(state): State<Arc<AppState>>,
     Path(deployment_name): Path<String>,
-    body: Bytes,
+    _body: Bytes,
 ) -> Result<Json<WebhookResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Try to parse body as DeploymentConfig (forwarded from Home)
-    // If parsing fails or body is empty, look up locally
-    let deployment = if !body.is_empty() {
-        serde_json::from_slice::<DeploymentConfig>(&body).ok()
-    } else {
-        None
-    }
-    .or_else(|| {
-        state
-            .config
-            .modules
-            .deploy
-            .deployments
-            .iter()
-            .find(|d| d.name == deployment_name)
-            .cloned()
-    })
-    .ok_or_else(|| {
-        ErrorResponse::new(
-            StatusCode::NOT_FOUND,
-            &format!("Deployment '{}' not found", deployment_name),
-        )
-    })?;
+    // Look up deployment in local config
+    let deployment = state
+        .config
+        .modules
+        .deploy
+        .deployments
+        .iter()
+        .find(|d| d.name == deployment_name)
+        .cloned();
+
+    // If not found locally, try fetching from Home
+    let deployment = match deployment {
+        Some(d) => d,
+        None => fetch_from_home(&state, &deployment_name)
+            .await
+            .map_err(|e| {
+                ErrorResponse::new(
+                    StatusCode::NOT_FOUND,
+                    &format!("Deployment '{}': {}", deployment_name, e),
+                )
+            })?,
+    };
 
     // Get executor
     let executor = state.deploy_executor.as_ref().ok_or_else(|| {
@@ -251,6 +251,49 @@ pub async fn get_queue_status(
             "completed_at": j.completed_at.map(format_rfc3339),
         })).collect::<Vec<_>>(),
     })))
+}
+
+/// Fetch deployment config from Home server
+async fn fetch_from_home(state: &AppState, name: &str) -> Result<DeploymentConfig, String> {
+    let home_addr = state
+        .config
+        .server
+        .home_address
+        .as_ref()
+        .ok_or_else(|| "not found locally and home_address not configured".to_string())?;
+
+    let jwt = JwtManager::new(&state.config.auth.jwt_secret);
+    let token = jwt
+        .generate_token("agent", 1)
+        .map_err(|e| format!("failed to generate token: {}", e))?;
+
+    let url = format!("http://{}/api/deployments/{}", home_addr, name);
+
+    info!(
+        deployment = %name,
+        home = %home_addr,
+        "Fetching deployment config from Home"
+    );
+
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| format!("failed to reach Home at {}: {}", home_addr, e))?;
+
+    if resp.status() == StatusCode::NOT_FOUND {
+        return Err("not found on Home server".to_string());
+    }
+
+    if !resp.status().is_success() {
+        return Err(format!("Home returned {}", resp.status()));
+    }
+
+    resp.json::<DeploymentConfig>()
+        .await
+        .map_err(|e| format!("failed to parse config from Home: {}", e))
 }
 
 /// Verify webhook signature (GitHub-style HMAC-SHA256)

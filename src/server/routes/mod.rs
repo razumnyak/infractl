@@ -17,6 +17,7 @@ pub fn common() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", get(root))
         // Webhook routes available on both modes
+        .route("/api/deployments/:name", get(api::get_deployment_config))
         .route("/webhook/deploy/:name", post(webhook::trigger_deploy))
         .route("/webhook/shutdown/:name", post(webhook::trigger_shutdown))
         .route("/webhook/status/:job_id", get(webhook::get_job_status))

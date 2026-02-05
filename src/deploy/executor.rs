@@ -56,7 +56,12 @@ impl DeployExecutor {
             for cmd in config.pre_deploy.as_vec() {
                 match self
                     .script
-                    .run_command(cmd, config.path.as_deref(), &config.env)
+                    .run_command(
+                        cmd,
+                        config.path.as_deref(),
+                        &config.env,
+                        config.user.as_deref(),
+                    )
                     .await
                 {
                     Ok(cmd_output) => {
@@ -191,7 +196,12 @@ impl DeployExecutor {
             for cmd in config.post_deploy.as_vec() {
                 match self
                     .script
-                    .run_command(cmd, config.path.as_deref(), &config.env)
+                    .run_command(
+                        cmd,
+                        config.path.as_deref(),
+                        &config.env,
+                        config.user.as_deref(),
+                    )
                     .await
                 {
                     Ok(cmd_output) => {
@@ -320,7 +330,12 @@ impl DeployExecutor {
         } else {
             // Inline script — run via sh -c
             self.script
-                .run_command(script, working_dir.or(config.path.as_deref()), &config.env)
+                .run_command(
+                    script,
+                    working_dir.or(config.path.as_deref()),
+                    &config.env,
+                    config.user.as_deref(),
+                )
                 .await
         }
     }
@@ -342,7 +357,12 @@ impl DeployExecutor {
             for cmd in config.shutdown.as_vec() {
                 match self
                     .script
-                    .run_command(cmd, config.path.as_deref(), &config.env)
+                    .run_command(
+                        cmd,
+                        config.path.as_deref(),
+                        &config.env,
+                        config.user.as_deref(),
+                    )
                     .await
                 {
                     Ok(cmd_output) => {

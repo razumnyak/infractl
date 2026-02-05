@@ -13,11 +13,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 use tower::ServiceBuilder;
-use tower_http::{
-    compression::CompressionLayer,
-    cors::{Any, CorsLayer},
-    trace::TraceLayer,
-};
+use tower_http::{compression::CompressionLayer, trace::TraceLayer};
 use tracing::{info, warn};
 
 #[derive(Serialize)]
@@ -42,13 +38,7 @@ pub fn apply(router: Router<Arc<AppState>>, _state: Arc<AppState>) -> Router<Arc
     router.layer(
         ServiceBuilder::new()
             .layer(TraceLayer::new_for_http())
-            .layer(CompressionLayer::new())
-            .layer(
-                CorsLayer::new()
-                    .allow_origin(Any)
-                    .allow_methods(Any)
-                    .allow_headers(Any),
-            ),
+            .layer(CompressionLayer::new()),
     )
 }
 

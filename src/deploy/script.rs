@@ -22,15 +22,23 @@ impl ScriptRunner {
         }
     }
 
-    /// Run a shell command
+    /// Run a shell command (optionally as specified user via sudo)
     pub async fn run_command(
         &self,
         command: &str,
         working_dir: Option<&str>,
         env: &HashMap<String, String>,
+        run_as_user: Option<&str>,
     ) -> Result<String, String> {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg(command);
+        let mut cmd = if let Some(user) = run_as_user {
+            let mut c = Command::new("sudo");
+            c.args(["-u", user, "sh", "-c", command]);
+            c
+        } else {
+            let mut c = Command::new("sh");
+            c.arg("-c").arg(command);
+            c
+        };
 
         if let Some(dir) = working_dir {
             cmd.current_dir(dir);
@@ -65,7 +73,7 @@ impl ScriptRunner {
         }
     }
 
-    /// Run a script file
+    /// Run a script file (executes directly, not via shell, to prevent injection)
     pub async fn run_script(
         &self,
         script_path: &str,
@@ -73,15 +81,46 @@ impl ScriptRunner {
         env: &HashMap<String, String>,
         run_as_user: Option<&str>,
     ) -> Result<String, String> {
-        let command = if let Some(user) = run_as_user {
-            format!("sudo -u {} bash {}", user, script_path)
-        } else {
-            format!("bash {}", script_path)
-        };
-
         info!(script = %script_path, user = ?run_as_user, "Running script");
 
-        self.run_command(&command, working_dir, env).await
+        let mut cmd = if let Some(user) = run_as_user {
+            let mut c = Command::new("sudo");
+            c.args(["-u", user, "bash", script_path]);
+            c
+        } else {
+            let mut c = Command::new("bash");
+            c.arg(script_path);
+            c
+        };
+
+        if let Some(dir) = working_dir {
+            cmd.current_dir(dir);
+        }
+
+        for (key, value) in env {
+            cmd.env(key, value);
+        }
+
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+        let output = timeout(self.default_timeout, cmd.output())
+            .await
+            .map_err(|_| format!("Script timed out after {:?}", self.default_timeout))?
+            .map_err(|e| format!("Failed to execute script: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        if output.status.success() {
+            Ok(format!("{}{}", stdout, stderr))
+        } else {
+            Err(format!(
+                "Script failed with exit code {}: {}\n{}",
+                output.status.code().unwrap_or(-1),
+                stderr,
+                stdout
+            ))
+        }
     }
 
     /// Run multiple commands in sequence
@@ -91,11 +130,12 @@ impl ScriptRunner {
         commands: &[String],
         working_dir: Option<&str>,
         env: &HashMap<String, String>,
+        run_as_user: Option<&str>,
     ) -> Result<String, String> {
         let mut output = String::new();
 
         for cmd in commands {
-            let result = self.run_command(cmd, working_dir, env).await?;
+            let result = self.run_command(cmd, working_dir, env, run_as_user).await?;
             output.push_str(&format!("$ {}\n{}\n", cmd, result));
         }
 

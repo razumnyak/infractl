@@ -1,0 +1,96 @@
+services:
+  gitea:
+    image: gitea/gitea:latest
+    container_name: infractl-gitea
+    environment:
+      - GITEA__security__INSTALL_LOCK=true
+      - GITEA__server__ROOT_URL=http://10.10.0.2:3000/
+      - GITEA__server__HTTP_PORT=3000
+      - GITEA__database__DB_TYPE=sqlite3
+    volumes:
+      - gitea-data:/data
+      - ./configs/gitea-init.sh:/etc/gitea/init.sh:ro
+    networks:
+      infractl-test:
+        ipv4_address: 10.10.0.2
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  home:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile.test
+    container_name: infractl-home
+    command: ["--config", "/etc/infractl/config.yaml"]
+    volumes:
+      - ./configs/home.yaml:/etc/infractl/config.yaml:ro
+      - home-data:/var/lib/infractl
+    networks:
+      infractl-test:
+        ipv4_address: 10.10.0.3
+    ports:
+      - "8111:8111"
+    depends_on:
+      gitea:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8111/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  agent-1:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile.test
+    container_name: infractl-agent-1
+    command: ["--config", "/etc/infractl/config.yaml"]
+    volumes:
+      - ./configs/agent1.yaml:/etc/infractl/config.yaml:ro
+      - deploy-target:/opt/apps
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      infractl-test:
+        ipv4_address: 10.10.0.10
+    depends_on:
+      home:
+        condition: service_healthy
+      gitea:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8111/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  runner:
+    image: curlimages/curl:latest
+    container_name: infractl-runner
+    volumes:
+      - ./scenarios:/scenarios:ro
+    networks:
+      infractl-test:
+        ipv4_address: 10.10.0.100
+    entrypoint: ["sh", "-c", "sleep infinity"]
+    depends_on:
+      agent-1:
+        condition: service_healthy
+
+networks:
+  infractl-test:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.10.0.0/24
+          gateway: 10.10.0.1
+
+volumes:
+  gitea-data:
+  home-data:
+  deploy-target:

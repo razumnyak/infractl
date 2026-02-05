@@ -1,0 +1,46 @@
+# Multi-stage build for infractl test image
+FROM rust:1.85-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    musl-dev \
+    openssl-dev \
+    openssl-libs-static \
+    git \
+    pkgconfig \
+    perl \
+    make
+
+WORKDIR /app
+
+# Copy source
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+
+# Build with all features
+RUN cargo build --release --features "git"
+
+# Runtime image
+FROM alpine:3.19
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    git \
+    openssh-client \
+    docker-cli \
+    curl \
+    wget
+
+# Copy binary
+COPY --from=builder /app/target/release/infractl /usr/local/bin/infractl
+
+# Create directories
+RUN mkdir -p /etc/infractl /var/lib/infractl /var/log/infractl /opt/apps
+
+# Set permissions
+RUN chmod +x /usr/local/bin/infractl
+
+EXPOSE 8111
+
+ENTRYPOINT ["infractl"]

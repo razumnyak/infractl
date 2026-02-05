@@ -698,13 +698,25 @@ fn substitute_env_vars(content: &str) -> Result<String> {
     Ok(result)
 }
 
+/// Minimum JWT secret length (OWASP recommends 32+ bytes for HS256)
+const MIN_JWT_SECRET_LENGTH: usize = 32;
+
 /// Validate configuration
 fn validate(config: &Config) -> Result<()> {
-    // JWT secret must be set in production
+    // JWT secret must be set and have minimum length for security
     if config.auth.jwt_secret.is_empty() {
         return Err(InfraError::Config(
             "JWT secret must be set (auth.jwt_secret or JWT_SECRET env var)".to_string(),
         ));
+    }
+
+    if config.auth.jwt_secret.len() < MIN_JWT_SECRET_LENGTH {
+        return Err(InfraError::Config(format!(
+            "JWT secret must be at least {} characters (currently {}). \
+             Use a strong random secret for production.",
+            MIN_JWT_SECRET_LENGTH,
+            config.auth.jwt_secret.len()
+        )));
     }
 
     // Validate allowed networks are valid CIDR

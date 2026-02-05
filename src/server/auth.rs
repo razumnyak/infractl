@@ -1,4 +1,4 @@
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 
@@ -40,8 +40,11 @@ pub struct JwtManager {
 
 impl JwtManager {
     pub fn new(secret: &str) -> Self {
-        let mut validation = Validation::default();
+        // Explicitly use HS256 algorithm to prevent algorithm confusion attacks
+        let mut validation = Validation::new(Algorithm::HS256);
         validation.set_issuer(&["infractl"]);
+        // Require all standard claims
+        validation.set_required_spec_claims(&["exp", "iat", "iss", "sub"]);
 
         Self {
             encoding_key: EncodingKey::from_secret(secret.as_bytes()),
@@ -53,7 +56,9 @@ impl JwtManager {
     #[allow(dead_code)]
     pub fn generate_token(&self, subject: &str, ttl_hours: i64) -> Result<String, JwtError> {
         let claims = Claims::new(subject, ttl_hours);
-        encode(&Header::default(), &claims, &self.encoding_key).map_err(JwtError::Encode)
+        // Explicitly use HS256 algorithm header
+        encode(&Header::new(Algorithm::HS256), &claims, &self.encoding_key)
+            .map_err(JwtError::Encode)
     }
 
     pub fn validate_token(&self, token: &str) -> Result<Claims, JwtError> {

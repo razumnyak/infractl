@@ -1,0 +1,54 @@
+# Agent configuration for testing
+mode: agent
+
+server:
+  port: 8111
+  host: "0.0.0.0"
+  isolation_mode: true
+  allowed_networks:
+    - "10.10.0.0/24"
+    - "127.0.0.1/32"
+
+auth:
+  jwt_secret: "test-jwt-secret-minimum-32-characters-for-testing!"
+
+modules:
+  metrics:
+    enabled: true
+    collect_interval: "5s"
+
+  deploy:
+    enabled: true
+    deployments:
+      # Git pull deployment test
+      - name: test-app
+        type: git_pull
+        path: /opt/apps/test-app
+        repo: "http://10.10.0.2:3000/test/repo.git"
+        branch: main
+        post_deploy:
+          - "echo 'Deployed at $(date)' > /opt/apps/test-app/deployed.txt"
+        webhook:
+          enabled: true
+          secret: "webhook-secret-for-testing"
+
+      # Custom script deployment test
+      - name: script-app
+        type: custom_script
+        path: /opt/apps/script-app
+        script: |
+          echo "Hello from custom script"
+          date > /opt/apps/script-app/output.txt
+        webhook:
+          enabled: true
+
+      # Security test - should be blocked by path validation
+      # Uncomment to test path traversal protection:
+      # - name: evil-traversal
+      #   type: custom_script
+      #   path: /opt/apps/../../../tmp/evil
+      #   script: "echo pwned"
+
+logging:
+  level: debug
+  format: json

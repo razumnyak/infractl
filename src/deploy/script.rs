@@ -2,7 +2,41 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
+
+/// Validate command for dangerous shell metacharacters
+/// Returns Ok(()) if command is safe, Err with reason if not
+fn validate_command(cmd: &str) -> Result<(), String> {
+    // Block shell metacharacters that enable command injection
+    let dangerous_patterns = [
+        ("$(", "command substitution"),
+        ("`", "backtick command substitution"),
+        ("&&", "command chaining"),
+        ("||", "conditional execution"),
+        (";", "command separator"),
+        ("|", "pipe"),
+        (">>", "append redirect"),
+        (">&", "file descriptor redirect"),
+        ("<(", "process substitution"),
+        (">(", "process substitution"),
+    ];
+
+    for (pattern, description) in dangerous_patterns {
+        if cmd.contains(pattern) {
+            return Err(format!(
+                "Command contains forbidden pattern '{}' ({})",
+                pattern, description
+            ));
+        }
+    }
+
+    // Allow single > for output redirect but warn
+    if cmd.contains('>') && !cmd.contains(">>") && !cmd.contains(">&") {
+        warn!(command = %cmd, "Command contains output redirect, ensure this is intentional");
+    }
+
+    Ok(())
+}
 
 pub struct ScriptRunner {
     default_timeout: Duration,
@@ -23,6 +57,10 @@ impl ScriptRunner {
     }
 
     /// Run a shell command (optionally as specified user via sudo)
+    ///
+    /// # Security
+    /// Commands are validated against dangerous shell metacharacters
+    /// to prevent command injection attacks.
     pub async fn run_command(
         &self,
         command: &str,
@@ -30,6 +68,9 @@ impl ScriptRunner {
         env: &HashMap<String, String>,
         run_as_user: Option<&str>,
     ) -> Result<String, String> {
+        // Validate command for injection attacks
+        validate_command(command)?;
+
         let mut cmd = if let Some(user) = run_as_user {
             let mut c = Command::new("sudo");
             c.args(["-u", user, "sh", "-c", command]);

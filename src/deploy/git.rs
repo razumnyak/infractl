@@ -3,6 +3,63 @@ use std::process::Stdio;
 use tokio::process::Command;
 use tracing::{debug, info};
 
+/// Validate SSH key path for security
+/// - Must be absolute path
+/// - Cannot contain path traversal
+/// - Must have secure permissions (600 on Unix)
+fn validate_ssh_key_path(path: &str) -> Result<(), String> {
+    let p = Path::new(path);
+
+    // Must be absolute path
+    if !p.is_absolute() {
+        return Err("SSH key path must be absolute".into());
+    }
+
+    // No path traversal
+    if path.contains("..") {
+        return Err("SSH key path cannot contain '..'".into());
+    }
+
+    // Check file exists and read permissions
+    let meta =
+        std::fs::metadata(p).map_err(|e| format!("Cannot read SSH key '{}': {}", path, e))?;
+
+    // Verify it's a file, not directory
+    if !meta.is_file() {
+        return Err(format!("SSH key path '{}' is not a file", path));
+    }
+
+    // Check permissions on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = meta.permissions().mode();
+        // Key should be readable only by owner (0600 or 0400)
+        if mode & 0o077 != 0 {
+            return Err(format!(
+                "SSH key '{}' has insecure permissions {:o} (should be 600 or 400)",
+                path,
+                mode & 0o777
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Build GIT_SSH_COMMAND with validated SSH key
+fn build_ssh_command(ssh_key: &str) -> Result<String, String> {
+    validate_ssh_key_path(ssh_key)?;
+
+    // Escape single quotes in path for shell safety
+    let escaped_key = ssh_key.replace('\'', "'\\''");
+
+    Ok(format!(
+        "ssh -i '{}' -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes",
+        escaped_key
+    ))
+}
+
 pub struct GitDeploy;
 
 impl GitDeploy {
@@ -35,13 +92,11 @@ impl GitDeploy {
             .trim()
             .to_string();
 
-        // Set up SSH command if key is provided
-        let git_ssh_command = ssh_key.map(|key| {
-            format!(
-                "ssh -i '{}' -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null",
-                key.replace('\'', "'\\''")
-            )
-        });
+        // Set up SSH command if key is provided (with validation)
+        let git_ssh_command = match ssh_key {
+            Some(key) => Some(build_ssh_command(key)?),
+            None => None,
+        };
 
         // Fetch from remote
         info!(remote = %remote, branch = %branch, "Fetching from remote");
@@ -112,12 +167,10 @@ impl GitDeploy {
         args.push(url);
         args.push(dest_path);
 
-        let git_ssh_command = ssh_key.map(|key| {
-            format!(
-                "ssh -i '{}' -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null",
-                key.replace('\'', "'\\''")
-            )
-        });
+        let git_ssh_command = match ssh_key {
+            Some(key) => Some(build_ssh_command(key)?),
+            None => None,
+        };
 
         self.run_git_command(".", &args, git_ssh_command.as_deref())
             .await
@@ -160,12 +213,10 @@ impl GitDeploy {
             "Fetching files from git (shallow clone)"
         );
 
-        let git_ssh_command = ssh_key.map(|key| {
-            format!(
-                "ssh -i '{}' -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null",
-                key.replace('\'', "'\\''")
-            )
-        });
+        let git_ssh_command = match ssh_key {
+            Some(key) => Some(build_ssh_command(key)?),
+            None => None,
+        };
 
         // Shallow clone the repo
         let clone_result = self

@@ -1,0 +1,33 @@
+# Home server configuration for testing
+mode: home
+
+server:
+  port: 8111
+  host: "0.0.0.0"
+  isolation_mode: true
+  allowed_networks:
+    - "10.10.0.0/24"
+    - "127.0.0.1/32"
+
+auth:
+  jwt_secret: "test-jwt-secret-minimum-32-characters-for-testing!"
+  token_ttl: "1h"
+
+agents:
+  - name: agent-1
+    address: "http://10.10.0.10:8111"
+    description: "Test agent 1"
+
+modules:
+  metrics:
+    enabled: true
+    collect_interval: "10s"
+
+  storage:
+    enabled: true
+    retention_days: 1
+    aggregation_interval: "1h"
+
+logging:
+  level: debug
+  format: json

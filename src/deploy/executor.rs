@@ -6,6 +6,44 @@ use crate::config::{DeployType, DeploymentConfig};
 use std::time::Instant;
 use tracing::{error, info};
 
+/// Allowed base directories for deployments
+const ALLOWED_DEPLOY_PATHS: &[&str] = &["/opt/apps", "/srv", "/var/www", "/home", "/tmp"];
+
+/// Validate deployment path for security
+/// - Must be absolute path
+/// - Cannot contain path traversal sequences
+/// - Must be within allowed base directories
+fn validate_deployment_path(path: &str) -> Result<(), String> {
+    // Check for path traversal
+    if path.contains("..") {
+        return Err(format!(
+            "Path traversal detected in deployment path '{}': contains '..'",
+            path
+        ));
+    }
+
+    let p = std::path::Path::new(path);
+
+    // Must be absolute
+    if !p.is_absolute() {
+        return Err(format!("Deployment path '{}' must be absolute", path));
+    }
+
+    // Must be in allowed base directories
+    let in_allowed = ALLOWED_DEPLOY_PATHS
+        .iter()
+        .any(|base| path.starts_with(base));
+
+    if !in_allowed {
+        return Err(format!(
+            "Deployment path '{}' not in allowed directories: {:?}",
+            path, ALLOWED_DEPLOY_PATHS
+        ));
+    }
+
+    Ok(())
+}
+
 pub struct DeployExecutor {
     git: GitDeploy,
     docker: DockerDeploy,
@@ -30,6 +68,20 @@ impl DeployExecutor {
             deploy_type = ?config.deploy_type,
             "Starting deployment"
         );
+
+        // Validate deployment path for security (path traversal, allowed directories)
+        if let Some(ref path) = config.path {
+            if let Err(e) = validate_deployment_path(path) {
+                error!(deployment = %config.name, error = %e, "Path validation failed");
+                return DeployResult {
+                    success: false,
+                    skipped: false,
+                    output,
+                    error: Some(e),
+                    duration_ms: start.elapsed().as_millis() as i64,
+                };
+            }
+        }
 
         // Ensure working directory exists (create recursively if needed)
         if let Some(ref path) = config.path {

@@ -56,8 +56,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
 
-# Time (pinned to avoid edition2024)
-time = { version = "0.3.36", features = ["serde", "serde-human-readable", "formatting", "parsing", "macros"] }
+# Time
+time = { version = "0.3.47", features = ["serde", "serde-human-readable", "formatting", "parsing", "macros"] }
 
 # Utilities
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -90,6 +90,9 @@ regex = "1"
 
 # Duration parsing
 humantime = "2"
+
+# Pinned transitive dependency fixes
+quinn-proto = ">=0.11.14"
 
 # Archive extraction for self-update
 flate2 = "1"

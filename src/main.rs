@@ -161,9 +161,14 @@ async fn main() -> Result<()> {
                         .get(&deployment.name)
                         .map(|a| format!(" -> {}", a))
                         .unwrap_or_default();
+                    let category = if deployment.category == config::DeployCategory::System {
+                        " [system]"
+                    } else {
+                        ""
+                    };
                     println!(
-                        "  - {} ({:?}){}",
-                        deployment.name, deployment.deploy_type, agent_info
+                        "  - {} ({:?}){}{}",
+                        deployment.name, deployment.deploy_type, category, agent_info
                     );
                 }
                 println!("\nTotal: {}", cfg.modules.deploy.deployments.len());
@@ -253,6 +258,15 @@ async fn main() -> Result<()> {
                 .iter()
                 .find(|d| d.name == name)
                 .ok_or_else(|| anyhow::anyhow!("Deployment not found: {}", name))?;
+
+            // Block system deployments from CLI
+            if _deployment.category == config::DeployCategory::System {
+                eprintln!(
+                    "Error: '{}' is a system deployment and cannot be triggered via CLI",
+                    name
+                );
+                std::process::exit(1);
+            }
 
             // Generate token from config
             let jwt_manager = server::auth::JwtManager::new(&cfg.auth.jwt_secret);

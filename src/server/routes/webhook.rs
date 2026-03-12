@@ -1,4 +1,4 @@
-use crate::config::DeploymentConfig;
+use crate::config::{DeployCategory, DeploymentConfig};
 use crate::deploy::DeployJob;
 use crate::server::auth::JwtManager;
 use crate::server::middleware::ErrorResponse;
@@ -29,6 +29,8 @@ pub struct WebhookResponse {
     pub success: bool,
     pub message: String,
     pub job_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pipeline_id: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -68,6 +70,17 @@ pub async fn trigger_deploy(
             })?,
     };
 
+    // Block system deployments from webhook
+    if deployment.category == DeployCategory::System {
+        return Err(ErrorResponse::new(
+            StatusCode::FORBIDDEN,
+            &format!(
+                "Deployment '{}' is a system deployment and cannot be triggered via webhook",
+                deployment_name
+            ),
+        ));
+    }
+
     // Find webhook config for this deployment
     let webhook_config = state
         .config
@@ -105,8 +118,10 @@ pub async fn trigger_deploy(
         deployment_name.clone(),
         deployment,
         trigger_source,
+        None, // new pipeline_id
     );
 
+    let pipeline_id = job.pipeline_id.clone();
     let job_id = queue.enqueue(job).await;
 
     info!(
@@ -119,6 +134,7 @@ pub async fn trigger_deploy(
         success: true,
         message: format!("Deployment '{}' queued", deployment_name),
         job_id: Some(job_id),
+        pipeline_id: Some(pipeline_id),
     }))
 }
 
@@ -178,6 +194,7 @@ pub async fn trigger_shutdown(
                 deployment_name, result.output
             ),
             job_id: None,
+            pipeline_id: None,
         }))
     } else {
         warn!(
@@ -250,6 +267,41 @@ pub async fn get_queue_status(
             "created_at": format_rfc3339(j.created_at),
             "completed_at": j.completed_at.map(format_rfc3339),
         })).collect::<Vec<_>>(),
+    })))
+}
+
+/// GET /api/pipeline/:id - Get pipeline status (all jobs in pipeline)
+pub async fn get_pipeline_status(
+    State(state): State<Arc<AppState>>,
+    Path(pipeline_id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let queue = state.deploy_queue.as_ref().ok_or_else(|| {
+        ErrorResponse::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Deployment queue not available",
+        )
+    })?;
+
+    let jobs = queue.get_pipeline_jobs(&pipeline_id).await;
+    if jobs.is_empty() {
+        return Err(ErrorResponse::new(
+            StatusCode::NOT_FOUND,
+            "Pipeline not found",
+        ));
+    }
+
+    Ok(Json(serde_json::json!({
+        "pipeline_id": pipeline_id,
+        "jobs": jobs.iter().map(|j| serde_json::json!({
+            "id": j.id,
+            "deployment": j.deployment_name,
+            "status": format!("{:?}", j.status),
+            "created_at": format_rfc3339(j.created_at),
+            "started_at": j.started_at.map(format_rfc3339),
+            "completed_at": j.completed_at.map(format_rfc3339),
+            "trigger_source": j.trigger_source,
+        })).collect::<Vec<_>>(),
+        "count": jobs.len(),
     })))
 }
 

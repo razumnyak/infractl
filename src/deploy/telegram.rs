@@ -94,3 +94,146 @@ fn default_template(vars: &HashMap<String, String>) -> String {
     }
     msg
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_substitute_vars_basic() {
+        let mut vars = HashMap::new();
+        vars.insert("NAME".to_string(), "api".to_string());
+        vars.insert("STATUS".to_string(), "success".to_string());
+
+        let result = substitute_vars("Deploy ${NAME}: ${STATUS}", &vars);
+        assert_eq!(result, "Deploy api: success");
+    }
+
+    #[test]
+    fn test_substitute_vars_missing() {
+        let vars = HashMap::new();
+        let result = substitute_vars("Deploy ${NAME}: ${STATUS}", &vars);
+        assert_eq!(result, "Deploy ${NAME}: ${STATUS}");
+    }
+
+    #[test]
+    fn test_substitute_vars_empty() {
+        let vars = HashMap::new();
+        let result = substitute_vars("no vars here", &vars);
+        assert_eq!(result, "no vars here");
+    }
+
+    #[test]
+    fn test_default_template_success() {
+        let mut vars = HashMap::new();
+        vars.insert("DEPLOY_NAME".to_string(), "api".to_string());
+        vars.insert("DEPLOY_STATUS".to_string(), "success".to_string());
+        vars.insert("AGENT_NAME".to_string(), "server-1".to_string());
+
+        let result = default_template(&vars);
+        assert!(result.contains("✅"));
+        assert!(result.contains("api"));
+        assert!(result.contains("success"));
+        assert!(result.contains("server-1"));
+        assert!(!result.contains("Error:"));
+    }
+
+    #[test]
+    fn test_default_template_error() {
+        let mut vars = HashMap::new();
+        vars.insert("DEPLOY_NAME".to_string(), "api".to_string());
+        vars.insert("DEPLOY_STATUS".to_string(), "error".to_string());
+        vars.insert("AGENT_NAME".to_string(), "server-1".to_string());
+        vars.insert("DEPLOY_ERROR".to_string(), "connection refused".to_string());
+
+        let result = default_template(&vars);
+        assert!(result.contains("❌"));
+        assert!(result.contains("Error:"));
+        assert!(result.contains("connection refused"));
+    }
+
+    #[test]
+    fn test_default_template_empty_vars() {
+        let vars = HashMap::new();
+        let result = default_template(&vars);
+        assert!(result.contains("unknown"));
+    }
+
+    #[test]
+    fn test_silent_auto_detect_on_error() {
+        let config = TelegramConfig {
+            bot_token: "test".to_string(),
+            chat_id: "123".to_string(),
+            template: None,
+            silent: None,
+        };
+        let mut env = HashMap::new();
+        env.insert("TRIGGER_TYPE".to_string(), "on_error".to_string());
+
+        // silent=None + TRIGGER_TYPE=on_error → silent=false
+        let silent = config.silent.unwrap_or_else(|| {
+            env.get("TRIGGER_TYPE")
+                .map(|t| t != "on_error")
+                .unwrap_or(true)
+        });
+        assert!(!silent);
+    }
+
+    #[test]
+    fn test_silent_auto_detect_on_success() {
+        let config = TelegramConfig {
+            bot_token: "test".to_string(),
+            chat_id: "123".to_string(),
+            template: None,
+            silent: None,
+        };
+        let mut env = HashMap::new();
+        env.insert("TRIGGER_TYPE".to_string(), "on_success".to_string());
+
+        let silent = config.silent.unwrap_or_else(|| {
+            env.get("TRIGGER_TYPE")
+                .map(|t| t != "on_error")
+                .unwrap_or(true)
+        });
+        assert!(silent);
+    }
+
+    #[test]
+    fn test_silent_explicit_override() {
+        let config = TelegramConfig {
+            bot_token: "test".to_string(),
+            chat_id: "123".to_string(),
+            template: None,
+            silent: Some(false), // explicitly loud
+        };
+        let mut env = HashMap::new();
+        env.insert("TRIGGER_TYPE".to_string(), "on_success".to_string());
+
+        // Explicit silent=false overrides auto-detection
+        let silent = config.silent.unwrap_or_else(|| {
+            env.get("TRIGGER_TYPE")
+                .map(|t| t != "on_error")
+                .unwrap_or(true)
+        });
+        assert!(!silent);
+    }
+
+    #[test]
+    fn test_silent_no_trigger_type_defaults_silent() {
+        let config = TelegramConfig {
+            bot_token: "test".to_string(),
+            chat_id: "123".to_string(),
+            template: None,
+            silent: None,
+        };
+        let env: HashMap<String, String> = HashMap::new();
+
+        // No TRIGGER_TYPE → default silent=true
+        let silent = config.silent.unwrap_or_else(|| {
+            env.get("TRIGGER_TYPE")
+                .map(|t| t != "on_error")
+                .unwrap_or(true)
+        });
+        assert!(silent);
+    }
+}

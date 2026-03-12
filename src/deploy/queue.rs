@@ -216,3 +216,111 @@ impl Default for DeployQueue {
         Self::new(100)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{DeployType, DeploymentConfig};
+
+    fn test_config() -> DeploymentConfig {
+        DeploymentConfig {
+            name: "test".to_string(),
+            deploy_type: DeployType::CustomScript,
+            path: None,
+            repo: None,
+            branch: None,
+            remote: None,
+            ssh_key: None,
+            compose_file: None,
+            services: vec![],
+            script: Some("echo test".to_string()),
+            working_dir: None,
+            user: None,
+            env: Default::default(),
+            pre_deploy: Default::default(),
+            post_deploy: Default::default(),
+            shutdown: Default::default(),
+            timeout: None,
+            prune: false,
+            git_files: vec![],
+            on_success: Default::default(),
+            on_error: Default::default(),
+            pipeline: Default::default(),
+            continue_on_failure: false,
+            strategy: None,
+            category: Default::default(),
+            telegram: None,
+        }
+    }
+
+    #[test]
+    fn test_deploy_job_new_generates_pipeline_id() {
+        let job = DeployJob::new(
+            "agent".to_string(),
+            "test".to_string(),
+            test_config(),
+            None,
+            None,
+        );
+        assert!(!job.pipeline_id.is_empty());
+        assert!(!job.id.is_empty());
+        assert_ne!(job.id, job.pipeline_id);
+    }
+
+    #[test]
+    fn test_deploy_job_inherits_pipeline_id() {
+        let pipeline_id = "shared-pipeline-123".to_string();
+        let job = DeployJob::new(
+            "agent".to_string(),
+            "test".to_string(),
+            test_config(),
+            Some("trigger:parent".to_string()),
+            Some(pipeline_id.clone()),
+        );
+        assert_eq!(job.pipeline_id, pipeline_id);
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_jobs_query() {
+        let queue = DeployQueue::new(100);
+        let pipeline_id = "pipe-abc".to_string();
+
+        let job1 = DeployJob::new(
+            "agent".to_string(),
+            "deploy-a".to_string(),
+            test_config(),
+            None,
+            Some(pipeline_id.clone()),
+        );
+        let job2 = DeployJob::new(
+            "agent".to_string(),
+            "deploy-b".to_string(),
+            test_config(),
+            Some("trigger:deploy-a".to_string()),
+            Some(pipeline_id.clone()),
+        );
+        let job_other = DeployJob::new(
+            "agent".to_string(),
+            "deploy-c".to_string(),
+            test_config(),
+            None,
+            None, // different pipeline
+        );
+
+        queue.enqueue(job1).await;
+        queue.enqueue(job2).await;
+        queue.enqueue(job_other).await;
+
+        let pipeline_jobs = queue.get_pipeline_jobs(&pipeline_id).await;
+        assert_eq!(pipeline_jobs.len(), 2);
+        assert_eq!(pipeline_jobs[0].deployment_name, "deploy-a");
+        assert_eq!(pipeline_jobs[1].deployment_name, "deploy-b");
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_jobs_empty() {
+        let queue = DeployQueue::new(100);
+        let result = queue.get_pipeline_jobs("nonexistent").await;
+        assert!(result.is_empty());
+    }
+}

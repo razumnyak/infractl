@@ -992,4 +992,193 @@ mod tests {
             Some(TriggerConfig::Multiple(_))
         ));
     }
+
+    #[test]
+    fn test_deploy_category_default() {
+        let cat = DeployCategory::default();
+        assert_eq!(cat, DeployCategory::App);
+    }
+
+    #[test]
+    fn test_deploy_category_deserialize() {
+        let yaml = "category: system";
+        let wrapper: HashMap<String, DeployCategory> = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(wrapper["category"], DeployCategory::System);
+
+        let yaml = "category: app";
+        let wrapper: HashMap<String, DeployCategory> = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(wrapper["category"], DeployCategory::App);
+    }
+
+    #[test]
+    fn test_deploy_category_default_in_deployment() {
+        let yaml = r#"
+name: test
+type: custom_script
+script: echo hello
+"#;
+        let cfg: DeploymentConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.category, DeployCategory::App);
+    }
+
+    #[test]
+    fn test_on_success_alias_trigger() {
+        // "trigger" field should deserialize into on_success
+        let yaml = r#"
+name: test
+type: custom_script
+script: echo hello
+trigger: deploy-b
+"#;
+        let cfg: DeploymentConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.on_success.as_vec(), vec!["deploy-b"]);
+    }
+
+    #[test]
+    fn test_on_success_direct() {
+        let yaml = r#"
+name: test
+type: custom_script
+script: echo hello
+on_success: deploy-b
+"#;
+        let cfg: DeploymentConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.on_success.as_vec(), vec!["deploy-b"]);
+    }
+
+    #[test]
+    fn test_on_error_trigger() {
+        let yaml = r#"
+name: test
+type: custom_script
+script: echo hello
+on_error:
+  - rollback
+  - notify
+"#;
+        let cfg: DeploymentConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.on_error.as_vec(), vec!["rollback", "notify"]);
+    }
+
+    #[test]
+    fn test_pipeline_config_deserialize() {
+        let yaml = r#"
+name: test
+type: custom_script
+script: echo hello
+pipeline:
+  on_start: maintenance-on
+  on_finish: maintenance-off
+"#;
+        let cfg: DeploymentConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.pipeline.on_start.as_vec(), vec!["maintenance-on"]);
+        assert_eq!(cfg.pipeline.on_finish.as_vec(), vec!["maintenance-off"]);
+    }
+
+    #[test]
+    fn test_pipeline_config_default_empty() {
+        let yaml = r#"
+name: test
+type: custom_script
+script: echo hello
+"#;
+        let cfg: DeploymentConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(cfg.pipeline.on_start.is_empty());
+        assert!(cfg.pipeline.on_finish.is_empty());
+    }
+
+    #[test]
+    fn test_telegram_config_deserialize() {
+        let yaml = r#"
+name: tg-notify
+type: telegram
+category: system
+telegram:
+  bot_token: "123:ABC"
+  chat_id: "-100123"
+  template: "Deploy ${DEPLOY_NAME}: ${DEPLOY_STATUS}"
+  silent: true
+"#;
+        let cfg: DeploymentConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.deploy_type, DeployType::Telegram);
+        assert_eq!(cfg.category, DeployCategory::System);
+        let tg = cfg.telegram.unwrap();
+        assert_eq!(tg.bot_token, "123:ABC");
+        assert_eq!(tg.chat_id, "-100123");
+        assert_eq!(tg.template.unwrap(), "Deploy ${DEPLOY_NAME}: ${DEPLOY_STATUS}");
+        assert_eq!(tg.silent, Some(true));
+    }
+
+    #[test]
+    fn test_telegram_config_silent_default_none() {
+        let yaml = r#"
+name: tg-notify
+type: telegram
+telegram:
+  bot_token: "123:ABC"
+  chat_id: "-100123"
+"#;
+        let cfg: DeploymentConfig = serde_yaml::from_str(yaml).unwrap();
+        let tg = cfg.telegram.unwrap();
+        assert_eq!(tg.silent, None);
+    }
+
+    #[test]
+    fn test_deploy_type_telegram() {
+        let yaml = "type: telegram";
+        let wrapper: HashMap<String, DeployType> = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(wrapper["type"], DeployType::Telegram);
+    }
+
+    #[test]
+    fn test_global_triggers_in_deploy_config() {
+        let yaml = r#"
+enabled: true
+on_error: telegram-notifier
+on_success:
+  - slack-notify
+  - log-success
+deployments: []
+"#;
+        let cfg: DeployConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.on_error.as_vec(), vec!["telegram-notifier"]);
+        assert_eq!(cfg.on_success.as_vec(), vec!["slack-notify", "log-success"]);
+    }
+
+    #[test]
+    fn test_global_triggers_default_empty() {
+        let yaml = r#"
+enabled: true
+deployments: []
+"#;
+        let cfg: DeployConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(cfg.on_error.is_empty());
+        assert!(cfg.on_success.is_empty());
+    }
+
+    #[test]
+    fn test_full_deployment_with_all_new_fields() {
+        let yaml = r#"
+name: api
+type: git_pull
+path: /opt/apps/api
+category: app
+on_success:
+  - frontend
+  - cdn-purge
+on_error: rollback
+pipeline:
+  on_start: maintenance-on
+  on_finish: maintenance-off
+continue_on_failure: true
+"#;
+        let cfg: DeploymentConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.name, "api");
+        assert_eq!(cfg.category, DeployCategory::App);
+        assert_eq!(cfg.on_success.as_vec(), vec!["frontend", "cdn-purge"]);
+        assert_eq!(cfg.on_error.as_vec(), vec!["rollback"]);
+        assert_eq!(cfg.pipeline.on_start.as_vec(), vec!["maintenance-on"]);
+        assert_eq!(cfg.pipeline.on_finish.as_vec(), vec!["maintenance-off"]);
+        assert!(cfg.continue_on_failure);
+    }
 }

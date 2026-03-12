@@ -22,6 +22,7 @@ pub fn common() -> Router<Arc<AppState>> {
         .route("/webhook/shutdown/:name", post(webhook::trigger_shutdown))
         .route("/webhook/status/:job_id", get(webhook::get_job_status))
         .route("/webhook/queue", get(webhook::get_queue_status))
+        .route("/api/pipeline/:id", get(webhook::get_pipeline_status))
 }
 
 /// Agent mode routes

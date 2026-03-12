@@ -72,7 +72,10 @@ fn substitute_vars(template: &str, vars: &HashMap<String, String>) -> String {
 }
 
 fn default_template(vars: &HashMap<String, String>) -> String {
-    let name = vars.get("DEPLOY_NAME").map(|s| s.as_str()).unwrap_or("unknown");
+    let name = vars
+        .get("DEPLOY_NAME")
+        .map(|s| s.as_str())
+        .unwrap_or("unknown");
     let status = vars
         .get("DEPLOY_STATUS")
         .map(|s| s.as_str())

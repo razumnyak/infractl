@@ -195,7 +195,11 @@ impl DeployQueue {
         let mut result = Vec::new();
         {
             let jobs = self.jobs.read().await;
-            result.extend(jobs.iter().filter(|j| j.pipeline_id == pipeline_id).cloned());
+            result.extend(
+                jobs.iter()
+                    .filter(|j| j.pipeline_id == pipeline_id)
+                    .cloned(),
+            );
         }
         {
             let history = self.history.read().await;

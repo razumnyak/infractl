@@ -69,11 +69,7 @@ pub async fn start_worker(
 
             // Check if this is the root of a pipeline chain
             let is_pipeline_root = job.trigger_source.is_none()
-                || !job
-                    .trigger_source
-                    .as_ref()
-                    .unwrap()
-                    .starts_with("trigger:");
+                || !job.trigger_source.as_ref().unwrap().starts_with("trigger:");
 
             // 1. Pipeline on_start (only for root of chain)
             if is_pipeline_root && !job.config.pipeline.on_start.is_empty() {
@@ -242,8 +238,8 @@ fn build_trigger_env(
 /// Determine if this job is the last in the pipeline chain
 fn is_chain_terminal(job: &DeployJob, result: &DeployResult) -> bool {
     // Find the pipeline root — only root has pipeline config
-    let has_pipeline = !job.config.pipeline.on_start.is_empty()
-        || !job.config.pipeline.on_finish.is_empty();
+    let has_pipeline =
+        !job.config.pipeline.on_start.is_empty() || !job.config.pipeline.on_finish.is_empty();
 
     if !has_pipeline {
         // Check if this job was triggered by a pipeline root

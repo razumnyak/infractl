@@ -1105,7 +1105,10 @@ telegram:
         let tg = cfg.telegram.unwrap();
         assert_eq!(tg.bot_token, "123:ABC");
         assert_eq!(tg.chat_id, "-100123");
-        assert_eq!(tg.template.unwrap(), "Deploy ${DEPLOY_NAME}: ${DEPLOY_STATUS}");
+        assert_eq!(
+            tg.template.unwrap(),
+            "Deploy ${DEPLOY_NAME}: ${DEPLOY_STATUS}"
+        );
         assert_eq!(tg.silent, Some(true));
     }
 

@@ -1,6 +1,7 @@
 use super::docker::DockerDeploy;
 use super::git::GitDeploy;
 use super::script::ScriptRunner;
+use super::telegram::TelegramDeploy;
 use super::DeployResult;
 use crate::config::{DeployType, DeploymentConfig};
 use std::time::Instant;
@@ -48,6 +49,7 @@ pub struct DeployExecutor {
     git: GitDeploy,
     docker: DockerDeploy,
     script: ScriptRunner,
+    telegram: TelegramDeploy,
 }
 
 impl DeployExecutor {
@@ -56,6 +58,7 @@ impl DeployExecutor {
             git: GitDeploy::new(),
             docker: DockerDeploy::new(),
             script: ScriptRunner::new(),
+            telegram: TelegramDeploy::new(),
         }
     }
 
@@ -68,6 +71,38 @@ impl DeployExecutor {
             deploy_type = ?config.deploy_type,
             "Starting deployment"
         );
+
+        // Telegram: send message and return early (no path/pre/post deploy needed)
+        if config.deploy_type == DeployType::Telegram {
+            let tg_config = match config.telegram.as_ref() {
+                Some(tc) => tc,
+                None => {
+                    return DeployResult {
+                        success: false,
+                        skipped: false,
+                        output: String::new(),
+                        error: Some("Telegram type requires 'telegram' config".to_string()),
+                        duration_ms: start.elapsed().as_millis() as i64,
+                    };
+                }
+            };
+            return match self.telegram.send(tg_config, &config.env).await {
+                Ok(out) => DeployResult {
+                    success: true,
+                    skipped: false,
+                    output: out,
+                    error: None,
+                    duration_ms: start.elapsed().as_millis() as i64,
+                },
+                Err(e) => DeployResult {
+                    success: false,
+                    skipped: false,
+                    output: String::new(),
+                    error: Some(e),
+                    duration_ms: start.elapsed().as_millis() as i64,
+                },
+            };
+        }
 
         // Validate deployment path for security (path traversal, allowed directories)
         if let Some(ref path) = config.path {
@@ -223,6 +258,7 @@ impl DeployExecutor {
             },
             DeployType::DockerPull => self.execute_docker_pull(config).await,
             DeployType::CustomScript => self.execute_custom_script(config).await,
+            DeployType::Telegram => unreachable!("Telegram handled above"),
         };
 
         match result {

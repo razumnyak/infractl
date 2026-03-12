@@ -18,6 +18,7 @@ pub enum JobStatus {
 #[derive(Debug, Clone)]
 pub struct DeployJob {
     pub id: String,
+    pub pipeline_id: String,
     pub agent_name: String,
     pub deployment_name: String,
     pub config: DeploymentConfig,
@@ -34,9 +35,11 @@ impl DeployJob {
         deployment_name: String,
         config: DeploymentConfig,
         trigger_source: Option<String>,
+        pipeline_id: Option<String>,
     ) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
+            pipeline_id: pipeline_id.unwrap_or_else(|| Uuid::new_v4().to_string()),
             agent_name,
             deployment_name,
             config,
@@ -185,6 +188,26 @@ impl DeployQueue {
     #[allow(dead_code)]
     pub async fn is_empty(&self) -> bool {
         self.len().await == 0
+    }
+
+    /// Get all jobs belonging to a pipeline
+    pub async fn get_pipeline_jobs(&self, pipeline_id: &str) -> Vec<DeployJob> {
+        let mut result = Vec::new();
+        {
+            let jobs = self.jobs.read().await;
+            result.extend(jobs.iter().filter(|j| j.pipeline_id == pipeline_id).cloned());
+        }
+        {
+            let history = self.history.read().await;
+            result.extend(
+                history
+                    .iter()
+                    .filter(|j| j.pipeline_id == pipeline_id)
+                    .cloned(),
+            );
+        }
+        result.sort_by_key(|j| j.created_at);
+        result
     }
 }
 

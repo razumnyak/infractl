@@ -25,8 +25,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Webhook response includes `pipeline_id`
 - `deploy --list` shows `[system]` label for system deployments
 
-## [0.1.16] - 2026-03-10
+## [0.1.15-16] - 2026-02-05
 
 ### Added
 
-- Initial stable release
+- SSH key security validation (permissions check 0600/0400)
+- Command injection prevention in deploy scripts
+- Webhook signature verification (GitHub HMAC-SHA256, GitLab token)
+- `GET /api/deployments/:name` endpoint for fetching deployment config
+- Agent → Home config fetch for deployments not found locally
+- Self-update checksum verification
+
+### Changed
+
+- Improved git deploy: SSH key handling via `GIT_SSH_COMMAND`
+- Enhanced script runner with timeout support and user switching (`sudo`)
+- Refactored webhook handler with proper signature detection (GitHub, GitLab, Bitbucket)
+
+## [0.1.8-14] - 2026-02-04
+
+### Added
+
+- External deployments support (`deployments.yaml`, `deployments.d/*.yaml`)
+- Docker deploy strategies: `default`, `force_recreate`, `restart`
+- `git_files` — fetch specific files from git without full clone
+- `prune` option for cleaning old Docker images
+- Path security validation (traversal protection, allowed directories whitelist)
+- `shutdown` commands and `POST /webhook/shutdown/:name` endpoint
+- `continue_on_failure` for pipeline resilience
+
+### Changed
+
+- Refactored deploy executor with separate git, docker, script modules
+- Improved git pull: detect changes via commit hash comparison, skip post-deploy if no changes
+
+## [0.1.7] - 2026-02-03
+
+### Added
+
+- Git pull deploy: auto-clone on first deploy, then fetch+reset
+- Docker pull deploy: `git_files` fetch + compose up with strategy
+- Deployment trigger pipelines (`trigger` field)
+
+### Fixed
+
+- `bytes` crate updated to 1.11.1 (RUSTSEC-2026-0007)
+
+### Changed
+
+- Improved release script (cargo.lock update, cargo fmt)
+
+## [0.1.5] - 2026-02-02
+
+### Added
+
+- Dashboard JWT authentication (embedded token for API calls)
+- `infractl deploy` CLI command with agent forwarding
+
+### Changed
+
+- Dashboard API calls now include `Authorization` header
+
+## [0.1.3-4] - 2026-02-01
+
+### Added
+
+- Initial release
+- Home/Agent architecture with JWT auth and network isolation
+- System metrics collection (CPU, RAM, Docker stats)
+- SQLite storage with retention and aggregation
+- Monitoring dashboard (rust-embed)
+- Webhook-based deployment triggers
+- Self-update from GitHub Releases
+- Release script for version management

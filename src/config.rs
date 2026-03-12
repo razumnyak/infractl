@@ -307,6 +307,12 @@ pub struct DeployConfig {
     /// Path to external deployments (loads deployments.yaml and deployments.d/*.yaml)
     #[serde(default = "default_external_deployments_path")]
     pub external_deployments_path: Option<String>,
+    /// Global on_error trigger: fires on ANY app deployment failure
+    #[serde(default)]
+    pub on_error: TriggerConfig,
+    /// Global on_success trigger: fires on ANY app deployment success
+    #[serde(default)]
+    pub on_success: TriggerConfig,
 }
 
 fn default_external_deployments_path() -> Option<String> {
@@ -363,15 +369,27 @@ pub struct DeploymentConfig {
     /// Files to fetch from git: ["from:to", "dir/:dir/"]
     #[serde(default, alias = "git_compose_files")]
     pub git_files: Vec<String>,
-    /// Trigger other deployments after this one completes
+    /// Trigger other deployments after this one succeeds (alias: trigger)
+    #[serde(default, alias = "trigger")]
+    pub on_success: TriggerConfig,
+    /// Trigger other deployments when this one fails
     #[serde(default)]
-    pub trigger: TriggerConfig,
+    pub on_error: TriggerConfig,
+    /// Pipeline-level hooks (on_start, on_finish)
+    #[serde(default)]
+    pub pipeline: PipelineConfig,
     /// Continue pipeline if triggered deployment fails
     #[serde(default)]
     pub continue_on_failure: bool,
     /// Docker deploy strategy (default, force_recreate, restart)
     #[serde(default)]
     pub strategy: Option<DeployStrategy>,
+    /// Deployment category: app (default) or system
+    #[serde(default)]
+    pub category: DeployCategory,
+    /// Telegram notification config (required for type: telegram)
+    #[serde(default)]
+    pub telegram: Option<TelegramConfig>,
 }
 
 /// Command list: accepts a string (multiline split by \n) or array of strings
@@ -441,6 +459,35 @@ pub enum DeployType {
     GitPull,
     DockerPull,
     CustomScript,
+    Telegram,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DeployCategory {
+    #[default]
+    App,
+    System,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TelegramConfig {
+    pub bot_token: String,
+    pub chat_id: String,
+    #[serde(default)]
+    pub template: Option<String>,
+    /// Silent mode: auto-detected from trigger type if not set explicitly
+    /// on_success → silent(true), on_error → silent(false)
+    #[serde(default)]
+    pub silent: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PipelineConfig {
+    #[serde(default)]
+    pub on_start: TriggerConfig,
+    #[serde(default)]
+    pub on_finish: TriggerConfig,
 }
 
 /// Docker deploy strategy
@@ -770,6 +817,14 @@ fn validate(config: &Config) -> Result<()> {
                 if deploy.script.is_none() {
                     return Err(InfraError::Config(format!(
                         "Deployment '{}' of type custom_script requires 'script'",
+                        deploy.name
+                    )));
+                }
+            }
+            DeployType::Telegram => {
+                if deploy.telegram.is_none() {
+                    return Err(InfraError::Config(format!(
+                        "Deployment '{}' of type telegram requires 'telegram' config",
                         deploy.name
                     )));
                 }

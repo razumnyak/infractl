@@ -214,6 +214,8 @@ modules:
     work_dir: "/opt/apps"
     default_timeout: "300s"
     external_deployments_path: "/etc/infractl"  # loads deployments.yaml + deployments.d/*.yaml
+    on_error: "telegram-notifier"               # global: fires on ANY app deployment failure
+    on_success: "slack-notify"                  # global: fires on ANY app deployment success
     deployments:
       - name: "myapp"
         type: git_pull
@@ -223,7 +225,11 @@ modules:
           - "docker compose up -d"
         shutdown:
           - "docker compose down"
-        trigger: "myapp-nginx"  # or list: ["app1", "app2"]
+        on_success: "myapp-nginx"   # or list: ["app1", "app2"]
+        on_error: "myapp-rollback"
+        pipeline:
+          on_start: "maintenance-on"
+          on_finish: "maintenance-off"
 ```
 
 | Field | Type | Default | Description |
@@ -233,6 +239,8 @@ modules:
 | `default_timeout` | duration | `300s` | Default deployment timeout |
 | `external_deployments_path` | string | `/etc/infractl` | Load additional deployments from this path |
 | `deployments` | list | `[]` | Deployment configurations |
+| `on_error` | string/list | - | Global trigger: fires on any app deployment failure |
+| `on_success` | string/list | - | Global trigger: fires on any app deployment success |
 
 #### External Deployments
 
@@ -248,7 +256,8 @@ Duplicate names are ignored (first wins).
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | **Yes** | Unique deployment name (used in webhook URL) |
-| `type` | enum | **Yes** | `git_pull`, `docker_pull`, or `custom_script` |
+| `type` | enum | **Yes** | `git_pull`, `docker_pull`, `custom_script`, or `telegram` |
+| `category` | enum | No | `app` (default) or `system`. System deployments can only be triggered by other deployments |
 
 **Type-specific fields:**
 
@@ -277,7 +286,9 @@ Duplicate names are ignored (first wins).
 | `post_deploy` | list | `[]` | Commands to run after deploy |
 | `shutdown` | list | `[]` | Commands to run on stop (default: `docker compose down` for docker_pull) |
 | `timeout` | duration | `default_timeout` | Deployment timeout |
-| `trigger` | string/list | - | Trigger other deployments after success (skipped if no changes for git_pull) |
+| `on_success` | string/list | - | Trigger deployments after success (alias: `trigger`) |
+| `on_error` | string/list | - | Trigger deployments after failure |
+| `pipeline` | object | - | Pipeline-level hooks (see below) |
 | `continue_on_failure` | boolean | `false` | Continue pipeline if triggered deploy fails |
 
 #### Deploy Strategy (docker_pull)
@@ -288,9 +299,72 @@ Duplicate names are ignored (first wins).
 | `force_recreate` | `docker compose up -d --force-recreate --remove-orphans` — recreates containers, picks up volume changes |
 | `restart` | `docker compose up -d` then `docker compose restart` — restart process in existing container |
 
+#### Pipeline Hooks
+
+Wrap entire deployment chains with `pipeline.on_start` and `pipeline.on_finish`:
+
+```yaml
+- name: "api"
+  type: git_pull
+  path: "/opt/apps/api"
+  pipeline:
+    on_start: "maintenance-on"     # before first deploy in chain
+    on_finish: "maintenance-off"   # ALWAYS after chain ends (success or error)
+  on_success: "frontend"
+  on_error: "api-rollback"
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pipeline.on_start` | string/list | Trigger before first deployment in chain |
+| `pipeline.on_finish` | string/list | Trigger after chain ends (always, regardless of result) |
+
+#### Telegram Notifications
+
+Built-in Telegram Bot API integration via `type: telegram`:
+
+```yaml
+- name: "telegram-notifier"
+  category: system
+  type: telegram
+  telegram:
+    bot_token: "${TG_BOT_TOKEN}"
+    chat_id: "${TG_CHAT_ID}"
+    template: "${DEPLOY_STATUS}: ${DEPLOY_NAME} on ${AGENT_NAME}"
+    silent: true  # optional, auto-detected from trigger type
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `bot_token` | string | **Yes** | Telegram Bot API token |
+| `chat_id` | string | **Yes** | Target chat/group ID |
+| `template` | string | No | Message template with `${VAR}` substitution |
+| `silent` | boolean | No | Disable notification sound. Auto: `on_success` → silent, `on_error` → loud |
+
+**Context environment variables** available in triggered deployments:
+
+| Variable | Description |
+|----------|-------------|
+| `DEPLOY_NAME` | Name of the deployment that triggered |
+| `DEPLOY_STATUS` | `success` or `error` |
+| `DEPLOY_ERROR` | Error message (empty on success) |
+| `AGENT_NAME` | Agent that executed the deployment |
+| `PIPELINE_ID` | Shared UUID for the entire pipeline chain |
+| `TRIGGER_TYPE` | `on_success`, `on_error`, `on_start`, or `on_finish` |
+| `DEPLOY_DURATION_MS` | Execution time in milliseconds |
+
+#### Deployment Categories
+
+| Category | Trigger via webhook/CLI/cron | Trigger via other deployments |
+|----------|---------------------------|-------------------------------|
+| `app` (default) | Yes | Yes |
+| `system` | No (403 Forbidden) | Yes |
+
+System deployments are internal tools (notifiers, rollback scripts, maintenance toggles) that should only run as part of a pipeline.
+
 #### Multi-Stage Pipelines
 
-Use `trigger` to chain deployments. `git_pull` skips triggers when no changes detected.
+Use `on_success` (alias: `trigger`) to chain deployments. `git_pull` skips triggers when no changes detected.
 
 ```yaml
 # Stage 1: Git pull (skips pipeline if no changes)
@@ -299,14 +373,18 @@ Use `trigger` to chain deployments. `git_pull` skips triggers when no changes de
   path: "/var/lib/infractl/repos/myapp"
   repo: "git@github.com:org/myapp.git"
   branch: "main"
-  trigger: "App-Sync"
+  on_success: "App-Sync"
+  on_error: "telegram-notifier"
+  pipeline:
+    on_start: "maintenance-on"
+    on_finish: "maintenance-off"
 
 # Stage 2: Sync files
 - name: "App-Sync"
   type: custom_script
   script: |
     rsync -a --delete /var/lib/infractl/repos/myapp/deploy/ /var/www/myapp/
-  trigger: "App-Docker"
+  on_success: "App-Docker"
 
 # Stage 3: Docker restart
 - name: "App-Docker"
@@ -314,6 +392,25 @@ Use `trigger` to chain deployments. `git_pull` skips triggers when no changes de
   path: "/var/www/myapp"
   compose_file: "docker-compose.yaml"
   strategy: force_recreate
+
+# System: Telegram notifications
+- name: "telegram-notifier"
+  category: system
+  type: telegram
+  telegram:
+    bot_token: "${TG_BOT_TOKEN}"
+    chat_id: "${TG_CHAT_ID}"
+
+# System: Maintenance window
+- name: "maintenance-on"
+  category: system
+  type: custom_script
+  script: "curl -X POST https://status.example.com/api/maintenance/start"
+
+- name: "maintenance-off"
+  category: system
+  type: custom_script
+  script: "curl -X POST https://status.example.com/api/maintenance/end"
 ```
 
 #### Agent Assignments

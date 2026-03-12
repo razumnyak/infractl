@@ -33,17 +33,24 @@ Home (:8111/monitoring, /webhook) → internal net → Agent(s) (:8111/health, /
 - **Config**: YAML, env substitution `${VAR}`, hot-reload
 - **Metrics**: CPU/RAM/Docker stats (sysinfo, bollard)
 - **Storage**: SQLite, только Home, retention + aggregation
-- **Deploy**: git_pull | docker_pull | custom_script, SSH keys
+- **Deploy**: git_pull | docker_pull | custom_script | telegram, SSH keys
+- **Triggers**: on_success/on_error (per-deploy, global, pipeline-level)
+- **Categories**: app (default) | system (internal only, no webhook/CLI)
 - **Updater**: self-update из GitHub Releases, config sync
 - **Web**: axum, embedded HTML (rust-embed), JWT middleware
 
 ## Ключевые endpoints
 | Endpoint | Mode | Назначение |
 |----------|------|------------|
-| GET /health | Agent | JSON метрики |
+| GET /health | Both | JSON метрики |
 | GET /monitoring | Home | Dashboard UI |
 | POST /webhook/deploy/{name} | Both | Trigger deploy |
+| POST /webhook/shutdown/{name} | Both | Stop deploy |
+| GET /webhook/status/{job_id} | Both | Job status |
+| GET /webhook/queue | Both | Queue + history |
+| GET /api/pipeline/{id} | Both | Pipeline status |
 | GET /api/agents | Home | Статус агентов |
+| GET /api/deployments/{name} | Both | Deployment config |
 
 ## Stack
 tokio, axum, serde_yaml, rusqlite, bollard, git2, jsonwebtoken, sysinfo, rust-embed, clap
@@ -62,11 +69,23 @@ server:
   allowed_networks: ["10.0.0.0/8"]
 modules:
   deploy:
+    on_error: "telegram-notifier"     # global error trigger
     deployments:
       - name: "api"
         type: git_pull
         path: "/opt/apps/api"
         post_deploy: ["docker compose up -d"]
+        on_success: "frontend"
+        on_error: "api-rollback"
+        pipeline:
+          on_start: "maintenance-on"
+          on_finish: "maintenance-off"
+      - name: "telegram-notifier"
+        category: system
+        type: telegram
+        telegram:
+          bot_token: "${TG_BOT_TOKEN}"
+          chat_id: "${TG_CHAT_ID}"
 ```
 
 ## Security

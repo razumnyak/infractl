@@ -9,6 +9,10 @@ Infrastructure monitoring and deployment agent for self-hosted servers.
 - **System Monitoring**: CPU, RAM, disk, network metrics
 - **Docker Integration**: Container stats, compose project tracking
 - **Auto-Deploy**: Git pull, Docker pull, custom scripts via webhooks
+- **Three-Level Triggers**: `on_success`/`on_error` per deployment, global, and pipeline-level hooks
+- **Deployment Categories**: `app` (default) and `system` (internal-only, e.g. notifications)
+- **Telegram Notifications**: Built-in `type: telegram` with auto-silent mode
+- **Pipeline Tracking**: `pipeline_id` groups chained deployments, query via API
 - **Multi-Stage Pipelines**: Trigger chains with change detection (skip if no diff)
 - **Deploy Strategies**: Default, force-recreate, restart for Docker deployments
 - **Git Files**: Fetch specific files/dirs from git without full clone
@@ -101,6 +105,7 @@ infractl --config /etc/infractl/config.yaml
 | `GET /api/metrics` | Home | Metrics history |
 | `POST /webhook/deploy/{name}` | Both | Trigger deployment |
 | `POST /webhook/shutdown/{name}` | Both | Stop deployment |
+| `GET /api/pipeline/{id}` | Both | Pipeline status |
 
 ## Requirements
 

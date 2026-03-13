@@ -313,6 +313,9 @@ pub struct DeployConfig {
     /// Global on_success trigger: fires on ANY app deployment success
     #[serde(default)]
     pub on_success: TriggerConfig,
+    /// Additional allowed deploy paths (beyond built-in defaults)
+    #[serde(default)]
+    pub allowed_deploy_paths: Vec<String>,
 }
 
 fn default_external_deployments_path() -> Option<String> {
@@ -390,6 +393,9 @@ pub struct DeploymentConfig {
     /// Telegram notification config (required for type: telegram)
     #[serde(default)]
     pub telegram: Option<TelegramConfig>,
+    /// Runtime-only: bypass path validation (set by CLI --force, never from config)
+    #[serde(skip)]
+    pub force: bool,
 }
 
 /// Command list: accepts a string (multiline split by \n) or array of strings
@@ -1184,5 +1190,66 @@ continue_on_failure: true
         assert_eq!(cfg.pipeline.on_start.as_vec(), vec!["maintenance-on"]);
         assert_eq!(cfg.pipeline.on_finish.as_vec(), vec!["maintenance-off"]);
         assert!(cfg.continue_on_failure);
+    }
+
+    #[test]
+    fn test_deploy_category_protected() {
+        let yaml = "category: protected";
+        let wrapper: HashMap<String, DeployCategory> = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(wrapper["category"], DeployCategory::Protected);
+    }
+
+    #[test]
+    fn test_protected_deployment_deserialize() {
+        let yaml = r#"
+name: infra-sync
+type: custom_script
+category: protected
+script: echo synced
+path: /etc/infractl
+"#;
+        let cfg: DeploymentConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.category, DeployCategory::Protected);
+        assert_eq!(cfg.name, "infra-sync");
+        // force is serde(skip), always false from yaml
+        assert!(!cfg.force);
+    }
+
+    #[test]
+    fn test_force_not_deserializable() {
+        let yaml = r#"
+name: test
+type: custom_script
+script: echo test
+force: true
+"#;
+        // force is #[serde(skip)], so it should be ignored (default false)
+        let cfg: DeploymentConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(!cfg.force);
+    }
+
+    #[test]
+    fn test_allowed_deploy_paths_config() {
+        let yaml = r#"
+enabled: true
+allowed_deploy_paths:
+  - "/etc/infractl"
+  - "/custom/path"
+deployments: []
+"#;
+        let cfg: DeployConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.allowed_deploy_paths.len(), 2);
+        assert_eq!(cfg.allowed_deploy_paths[0], "/etc/infractl");
+        assert_eq!(cfg.allowed_deploy_paths[1], "/custom/path");
+    }
+
+    #[test]
+    fn test_allowed_deploy_paths_default_empty() {
+        let yaml = r#"
+enabled: true
+deployments: []
+"#;
+        let cfg: DeployConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(cfg.allowed_deploy_paths.is_empty());
     }
 }

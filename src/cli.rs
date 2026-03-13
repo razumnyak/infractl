@@ -97,6 +97,10 @@ pub enum Commands {
         /// Stop deployment and clear saved agent assignment
         #[arg(long, visible_alias = "stop")]
         reset: bool,
+
+        /// Bypass path restrictions for this deployment
+        #[arg(short, long)]
+        force: bool,
     },
 
     /// Update infractl to the latest version

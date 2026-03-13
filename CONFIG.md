@@ -241,6 +241,7 @@ modules:
 | `deployments` | list | `[]` | Deployment configurations |
 | `on_error` | string/list | - | Global trigger: fires on any app deployment failure |
 | `on_success` | string/list | - | Global trigger: fires on any app deployment success |
+| `allowed_deploy_paths` | list | `[]` | Additional allowed directories for deployments (beyond defaults: `/opt/apps`, `/srv`, `/var/www`, `/home`, `/tmp`) |
 
 #### External Deployments
 
@@ -363,7 +364,7 @@ Built-in Telegram Bot API integration via `type: telegram`:
 
 - **app** — standard deployments, fully accessible
 - **system** — internal tools (notifiers, rollback scripts, maintenance toggles), only triggered by other deployments
-- **protected** — security-critical deployments (configs, secrets, .env files), only via CLI or from other protected deployments
+- **protected** — security-critical deployments (configs, secrets, .env files), only via CLI or from other protected deployments. Use `infractl deploy --force -n <name>` to trigger
 
 #### Multi-Stage Pipelines
 
@@ -432,6 +433,35 @@ Use `custom_script` + `git_files` to fetch specific files from a repository with
 ```
 
 Unlike `git_pull`, this doesn't clone the entire repository — only the specified files/directories are fetched into `path`.
+
+#### Protected Deployments
+
+For security-critical deployments (configs, secrets, `.env` files), use `category: protected` with `allowed_deploy_paths`:
+
+```yaml
+modules:
+  deploy:
+    allowed_deploy_paths:
+      - "/etc/infractl"
+    deployments:
+      - name: "InfraSync"
+        category: protected
+        type: custom_script
+        path: "/etc/infractl"
+        repo: "git@github.com:org/private-infra.git"
+        branch: "main"
+        git_files:
+          - "deployments.d/:deployments.d/"
+        script: "echo 'configs synced'"
+```
+
+Trigger via CLI only:
+
+```bash
+infractl deploy --force -n InfraSync
+```
+
+The `--force` flag bypasses path restrictions for a single run. Without it, protected deployments that use paths outside default allowed directories will be blocked. Path traversal (`..`) is always checked regardless of `--force`.
 
 #### Agent Assignments
 

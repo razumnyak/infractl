@@ -84,7 +84,9 @@ pub async fn start_worker(
             }
 
             // 2. Execute deployment
-            let result = executor.execute(&job.config).await;
+            let result = executor
+                .execute(&job.config, &deploy_config.allowed_deploy_paths)
+                .await;
 
             // Update status based on result
             let final_status = if result.success {
@@ -335,5 +337,125 @@ async fn fire_triggers(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{DeployCategory, DeployType, DeploymentConfig, TriggerConfig};
+
+    fn make_config(name: &str, category: DeployCategory) -> DeploymentConfig {
+        DeploymentConfig {
+            name: name.to_string(),
+            deploy_type: DeployType::CustomScript,
+            category,
+            path: None,
+            repo: None,
+            branch: None,
+            remote: None,
+            ssh_key: None,
+            compose_file: None,
+            services: vec![],
+            script: Some("echo test".to_string()),
+            working_dir: None,
+            user: None,
+            env: Default::default(),
+            pre_deploy: Default::default(),
+            post_deploy: Default::default(),
+            shutdown: Default::default(),
+            timeout: None,
+            prune: false,
+            git_files: vec![],
+            on_success: Default::default(),
+            on_error: Default::default(),
+            pipeline: Default::default(),
+            continue_on_failure: false,
+            strategy: None,
+            telegram: None,
+            force: false,
+        }
+    }
+
+    fn make_job(name: &str, category: DeployCategory) -> DeployJob {
+        DeployJob::new(
+            "local".to_string(),
+            name.to_string(),
+            make_config(name, category),
+            None,
+            None,
+        )
+    }
+
+    #[tokio::test]
+    async fn test_fire_triggers_protected_from_app_blocked() {
+        let queue = Arc::new(DeployQueue::new(100));
+        let parent_job = make_job("app-deploy", DeployCategory::App);
+        let deployments = vec![make_config("protected-sync", DeployCategory::Protected)];
+        let trigger = TriggerConfig::Single("protected-sync".to_string());
+        let env = HashMap::new();
+
+        fire_triggers(&trigger, &parent_job, &queue, &deployments, &env).await;
+
+        // Protected deployment should NOT be enqueued from app parent
+        assert!(queue.next_job().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_fire_triggers_protected_from_system_blocked() {
+        let queue = Arc::new(DeployQueue::new(100));
+        let parent_job = make_job("sys-notify", DeployCategory::System);
+        let deployments = vec![make_config("protected-sync", DeployCategory::Protected)];
+        let trigger = TriggerConfig::Single("protected-sync".to_string());
+        let env = HashMap::new();
+
+        fire_triggers(&trigger, &parent_job, &queue, &deployments, &env).await;
+
+        assert!(queue.next_job().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_fire_triggers_protected_from_protected_allowed() {
+        let queue = Arc::new(DeployQueue::new(100));
+        let parent_job = make_job("protected-a", DeployCategory::Protected);
+        let deployments = vec![make_config("protected-b", DeployCategory::Protected)];
+        let trigger = TriggerConfig::Single("protected-b".to_string());
+        let env = HashMap::new();
+
+        fire_triggers(&trigger, &parent_job, &queue, &deployments, &env).await;
+
+        let job = queue.next_job().await;
+        assert!(job.is_some());
+        assert_eq!(job.unwrap().deployment_name, "protected-b");
+    }
+
+    #[tokio::test]
+    async fn test_fire_triggers_app_from_app_allowed() {
+        let queue = Arc::new(DeployQueue::new(100));
+        let parent_job = make_job("app-a", DeployCategory::App);
+        let deployments = vec![make_config("app-b", DeployCategory::App)];
+        let trigger = TriggerConfig::Single("app-b".to_string());
+        let env = HashMap::new();
+
+        fire_triggers(&trigger, &parent_job, &queue, &deployments, &env).await;
+
+        let job = queue.next_job().await;
+        assert!(job.is_some());
+        assert_eq!(job.unwrap().deployment_name, "app-b");
+    }
+
+    #[tokio::test]
+    async fn test_fire_triggers_system_from_app_allowed() {
+        let queue = Arc::new(DeployQueue::new(100));
+        let parent_job = make_job("app-a", DeployCategory::App);
+        let deployments = vec![make_config("notifier", DeployCategory::System)];
+        let trigger = TriggerConfig::Single("notifier".to_string());
+        let env = HashMap::new();
+
+        fire_triggers(&trigger, &parent_job, &queue, &deployments, &env).await;
+
+        let job = queue.next_job().await;
+        assert!(job.is_some());
+        assert_eq!(job.unwrap().deployment_name, "notifier");
     }
 }

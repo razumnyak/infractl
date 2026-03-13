@@ -70,6 +70,7 @@ server:
 modules:
   deploy:
     on_error: "telegram-notifier"     # global error trigger
+    allowed_deploy_paths: ["/etc/infractl"]  # extra allowed paths
     deployments:
       - name: "api"
         type: git_pull
@@ -80,6 +81,11 @@ modules:
         pipeline:
           on_start: "maintenance-on"
           on_finish: "maintenance-off"
+      - name: "infra-sync"
+        category: protected           # CLI-only, --force required
+        type: custom_script
+        path: "/etc/infractl"
+        script: "echo 'synced'"
       - name: "telegram-notifier"
         category: system
         type: telegram
@@ -92,6 +98,8 @@ modules:
 - JWT Bearer tokens
 - Network isolation (только allowed_networks)
 - Suspicious requests → отдельный лог
+- Path validation: default dirs + `allowed_deploy_paths`, traversal (`..`) always blocked
+- `--force` only from localhost (CLI), ignored via external webhook
 
 ## Файлы проекта (по запуску программы)
 - `/etc/infractl/config.yaml` — конфиг

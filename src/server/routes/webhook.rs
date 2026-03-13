@@ -5,13 +5,14 @@ use crate::server::middleware::ErrorResponse;
 use crate::server::AppState;
 use axum::{
     body::Bytes,
-    extract::{Path, State},
+    extract::{ConnectInfo, Path, State},
     http::{HeaderMap, StatusCode},
     Json,
 };
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use time::format_description::well_known::Rfc3339;
@@ -43,6 +44,7 @@ pub struct TriggerRequest {
 /// Config is resolved locally or fetched from Home (never accepted from body)
 pub async fn trigger_deploy(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(deployment_name): Path<String>,
     headers: HeaderMap,
     body: Bytes,
@@ -70,20 +72,29 @@ pub async fn trigger_deploy(
             })?,
     };
 
-    // Block system and protected deployments from webhook
-    if deployment.category == DeployCategory::System
-        || deployment.category == DeployCategory::Protected
-    {
-        let category = if deployment.category == DeployCategory::System {
-            "system"
-        } else {
-            "protected"
-        };
+    // Check force flag (only from localhost via CLI)
+    let is_localhost = addr.ip().is_loopback();
+    let force =
+        is_localhost && headers.get("X-Deploy-Force").and_then(|v| v.to_str().ok()) == Some("true");
+
+    // Block system deployments always
+    if deployment.category == DeployCategory::System {
         return Err(ErrorResponse::new(
             StatusCode::FORBIDDEN,
             &format!(
-                "Deployment '{}' is a {} deployment and cannot be triggered via webhook",
-                deployment_name, category
+                "Deployment '{}' is a system deployment and cannot be triggered via webhook",
+                deployment_name
+            ),
+        ));
+    }
+
+    // Block protected deployments unless --force from localhost
+    if deployment.category == DeployCategory::Protected && !force {
+        return Err(ErrorResponse::new(
+            StatusCode::FORBIDDEN,
+            &format!(
+                "Deployment '{}' is a protected deployment, use: infractl deploy --force -n {}",
+                deployment_name, deployment_name
             ),
         ));
     }
@@ -119,6 +130,11 @@ pub async fn trigger_deploy(
             "Deployment queue not available",
         )
     })?;
+
+    let mut deployment = deployment;
+    if force {
+        deployment.force = true;
+    }
 
     let job = DeployJob::new(
         "local".to_string(), // Agent name for local deployments

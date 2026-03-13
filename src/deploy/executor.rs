@@ -7,14 +7,14 @@ use crate::config::{DeployType, DeploymentConfig};
 use std::time::Instant;
 use tracing::{error, info};
 
-/// Allowed base directories for deployments
-const ALLOWED_DEPLOY_PATHS: &[&str] = &["/opt/apps", "/srv", "/var/www", "/home", "/tmp"];
+/// Default allowed base directories for deployments
+const DEFAULT_ALLOWED_PATHS: &[&str] = &["/opt/apps", "/srv", "/var/www", "/home", "/tmp"];
 
 /// Validate deployment path for security
 /// - Must be absolute path
 /// - Cannot contain path traversal sequences
-/// - Must be within allowed base directories
-fn validate_deployment_path(path: &str) -> Result<(), String> {
+/// - Must be within allowed base directories (defaults + config extras)
+fn validate_deployment_path(path: &str, extra_paths: &[String], force: bool) -> Result<(), String> {
     // Check for path traversal
     if path.contains("..") {
         return Err(format!(
@@ -30,16 +30,23 @@ fn validate_deployment_path(path: &str) -> Result<(), String> {
         return Err(format!("Deployment path '{}' must be absolute", path));
     }
 
-    // Must be in allowed base directories
-    let in_allowed = ALLOWED_DEPLOY_PATHS
-        .iter()
-        .any(|base| path.starts_with(base));
+    // Must be in allowed base directories (defaults + config), unless force
+    if !force {
+        let in_allowed = DEFAULT_ALLOWED_PATHS
+            .iter()
+            .any(|base| path.starts_with(base))
+            || extra_paths
+                .iter()
+                .any(|base| path.starts_with(base.as_str()));
 
-    if !in_allowed {
-        return Err(format!(
-            "Deployment path '{}' not in allowed directories: {:?}",
-            path, ALLOWED_DEPLOY_PATHS
-        ));
+        if !in_allowed {
+            let mut all_paths: Vec<&str> = DEFAULT_ALLOWED_PATHS.to_vec();
+            all_paths.extend(extra_paths.iter().map(|s| s.as_str()));
+            return Err(format!(
+                "Deployment path '{}' not in allowed directories: {:?}",
+                path, all_paths
+            ));
+        }
     }
 
     Ok(())
@@ -62,7 +69,11 @@ impl DeployExecutor {
         }
     }
 
-    pub async fn execute(&self, config: &DeploymentConfig) -> DeployResult {
+    pub async fn execute(
+        &self,
+        config: &DeploymentConfig,
+        allowed_deploy_paths: &[String],
+    ) -> DeployResult {
         let start = Instant::now();
         let mut output = String::new();
 
@@ -105,8 +116,9 @@ impl DeployExecutor {
         }
 
         // Validate deployment path for security (path traversal, allowed directories)
+        // Skipped when force=true (CLI --force), but path traversal is always checked
         if let Some(ref path) = config.path {
-            if let Err(e) = validate_deployment_path(path) {
+            if let Err(e) = validate_deployment_path(path, allowed_deploy_paths, config.force) {
                 error!(deployment = %config.name, error = %e, "Path validation failed");
                 return DeployResult {
                     success: false,
@@ -587,5 +599,49 @@ mod tests {
         let files: Vec<String> = vec![];
         let result = parse_file_mappings(&files).unwrap();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_validate_path_default_allowed() {
+        assert!(validate_deployment_path("/opt/apps/myapp", &[], false).is_ok());
+        assert!(validate_deployment_path("/srv/data", &[], false).is_ok());
+        assert!(validate_deployment_path("/var/www/site", &[], false).is_ok());
+        assert!(validate_deployment_path("/home/user/app", &[], false).is_ok());
+        assert!(validate_deployment_path("/tmp/build", &[], false).is_ok());
+    }
+
+    #[test]
+    fn test_validate_path_rejected() {
+        assert!(validate_deployment_path("/etc/infractl", &[], false).is_err());
+        assert!(validate_deployment_path("/root/.ssh", &[], false).is_err());
+        assert!(validate_deployment_path("/usr/local/bin", &[], false).is_err());
+    }
+
+    #[test]
+    fn test_validate_path_extra_paths() {
+        let extra = vec!["/etc/infractl".to_string()];
+        assert!(validate_deployment_path("/etc/infractl", &extra, false).is_ok());
+        assert!(validate_deployment_path("/etc/infractl/deployments.d", &extra, false).is_ok());
+        // Other paths still rejected
+        assert!(validate_deployment_path("/root/.ssh", &extra, false).is_err());
+    }
+
+    #[test]
+    fn test_validate_path_force_bypasses_dirs() {
+        assert!(validate_deployment_path("/etc/infractl", &[], true).is_ok());
+        assert!(validate_deployment_path("/root/anything", &[], true).is_ok());
+    }
+
+    #[test]
+    fn test_validate_path_traversal_always_blocked() {
+        // Path traversal blocked even with force
+        assert!(validate_deployment_path("/opt/apps/../etc/passwd", &[], true).is_err());
+        assert!(validate_deployment_path("/opt/apps/../etc/passwd", &[], false).is_err());
+    }
+
+    #[test]
+    fn test_validate_path_must_be_absolute() {
+        assert!(validate_deployment_path("relative/path", &[], false).is_err());
+        assert!(validate_deployment_path("relative/path", &[], true).is_err());
     }
 }

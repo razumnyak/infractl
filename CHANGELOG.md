@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [0.1.19] - 2026-03-13
+
+### Added
+
+- **`--force` CLI flag** (`infractl deploy --force -n <name>`) — bypasses path restrictions for a single deployment run. Only works from localhost, ignored via external webhook. Path traversal is always checked
+- **`allowed_deploy_paths`** config option — extend default allowed directories (`/opt/apps`, `/srv`, `/var/www`, `/home`, `/tmp`) with custom paths like `/etc/infractl`
+
 ## [0.1.18] - 2026-03-13
 
 ### Added

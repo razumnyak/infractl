@@ -254,6 +254,7 @@ mod tests {
             strategy: None,
             category: Default::default(),
             telegram: None,
+            force: false,
         }
     }
 

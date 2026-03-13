@@ -145,6 +145,7 @@ async fn main() -> Result<()> {
             list,
             permanent,
             reset,
+            force,
         }) => {
             let cfg = config::load(&cli.config)?;
             let config_dir = cli
@@ -329,12 +330,13 @@ async fn main() -> Result<()> {
                     let url = format!("http://127.0.0.1:{}/webhook/deploy/{}", port, name);
 
                     let client = reqwest::Client::new();
-                    match client
+                    let mut req = client
                         .post(&url)
-                        .header("Authorization", format!("Bearer {}", token))
-                        .send()
-                        .await
-                    {
+                        .header("Authorization", format!("Bearer {}", token));
+                    if *force {
+                        req = req.header("X-Deploy-Force", "true");
+                    }
+                    match req.send().await {
                         Ok(resp) => {
                             let status = resp.status();
                             let body = resp.text().await.unwrap_or_default();

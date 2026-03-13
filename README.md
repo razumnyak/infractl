@@ -55,7 +55,7 @@ curl -fsSL https://github.com/razumnyak/infractl/releases/latest/download/instal
 Or with specific version and mode:
 
 ```bash
-curl -fsSL ... | sudo bash -s -- --version v0.1.18 --mode home
+curl -fsSL ... | sudo bash -s -- --version v0.1.19 --mode home
 ```
 
 ### Docker

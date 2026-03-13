@@ -70,13 +70,20 @@ pub async fn trigger_deploy(
             })?,
     };
 
-    // Block system deployments from webhook
-    if deployment.category == DeployCategory::System {
+    // Block system and protected deployments from webhook
+    if deployment.category == DeployCategory::System
+        || deployment.category == DeployCategory::Protected
+    {
+        let category = if deployment.category == DeployCategory::System {
+            "system"
+        } else {
+            "protected"
+        };
         return Err(ErrorResponse::new(
             StatusCode::FORBIDDEN,
             &format!(
-                "Deployment '{}' is a system deployment and cannot be triggered via webhook",
-                deployment_name
+                "Deployment '{}' is a {} deployment and cannot be triggered via webhook",
+                deployment_name, category
             ),
         ));
     }

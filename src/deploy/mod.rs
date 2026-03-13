@@ -8,7 +8,7 @@ mod telegram;
 pub use executor::DeployExecutor;
 pub use queue::{DeployJob, DeployQueue, JobStatus};
 
-use crate::config::{DeployConfig, DeploymentConfig, TriggerConfig};
+use crate::config::{DeployCategory, DeployConfig, DeploymentConfig, TriggerConfig};
 use crate::storage::{Database, DeployRecord, DeployStatus};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -131,8 +131,10 @@ pub async fn start_worker(
                     .await;
                 }
 
-                // 3b. Global on_success triggers
-                if !deploy_config.on_success.is_empty() {
+                // 3b. Global on_success triggers (skip for system/protected deployments)
+                if !deploy_config.on_success.is_empty()
+                    && job.config.category == DeployCategory::App
+                {
                     let env = build_trigger_env(&job, Some(&result), "on_success");
                     fire_triggers(
                         &deploy_config.on_success,
@@ -168,8 +170,10 @@ pub async fn start_worker(
                     .await;
                 }
 
-                // 4b. Global on_error triggers
-                if !deploy_config.on_error.is_empty() {
+                // 4b. Global on_error triggers (skip for system/protected deployments)
+                if !deploy_config.on_error.is_empty()
+                    && job.config.category == DeployCategory::App
+                {
                     let env = build_trigger_env(&job, Some(&result), "on_error");
                     fire_triggers(
                         &deploy_config.on_error,
@@ -276,6 +280,21 @@ async fn fire_triggers(
 
         match trigger_deploy {
             Some(config) => {
+                // Protected deployments can only be triggered by other protected deployments
+                if config.category == DeployCategory::Protected
+                    && parent_job.config.category != DeployCategory::Protected
+                {
+                    warn!(
+                        parent = %parent_job.deployment_name,
+                        trigger = %trigger_name,
+                        "Cannot trigger protected deployment from non-protected deployment"
+                    );
+                    if !continue_on_failure {
+                        break;
+                    }
+                    continue;
+                }
+
                 let mut config = config.clone();
                 // Merge context env vars into the triggered deployment's env
                 for (k, v) in context_env {

@@ -161,10 +161,10 @@ async fn main() -> Result<()> {
                         .get(&deployment.name)
                         .map(|a| format!(" -> {}", a))
                         .unwrap_or_default();
-                    let category = if deployment.category == config::DeployCategory::System {
-                        " [system]"
-                    } else {
-                        ""
+                    let category = match deployment.category {
+                        config::DeployCategory::System => " [system]",
+                        config::DeployCategory::Protected => " [protected]",
+                        config::DeployCategory::App => "",
                     };
                     println!(
                         "  - {} ({:?}){}{}",

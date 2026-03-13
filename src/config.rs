@@ -468,6 +468,7 @@ pub enum DeployCategory {
     #[default]
     App,
     System,
+    Protected,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -413,6 +413,23 @@ Use `on_success` (alias: `trigger`) to chain deployments. `git_pull` skips trigg
   script: "curl -X POST https://status.example.com/api/maintenance/end"
 ```
 
+#### Selective File Sync from Git
+
+Use `custom_script` + `git_files` to fetch specific files from a repository without a full clone — useful for syncing deployment configs or compose files from a private repo:
+
+```yaml
+- name: "InfraSync"
+  type: custom_script
+  path: "/etc/infractl"
+  repo: "git@github.com:org/private-infra.git"
+  branch: "main"
+  git_files:
+    - "deployments.d/:deployments.d/"
+  script: "echo 'configs synced'"
+```
+
+Unlike `git_pull`, this doesn't clone the entire repository — only the specified files/directories are fetched into `path`.
+
 #### Agent Assignments
 
 Deployments can be delegated to agents. Assignments are stored in `/etc/infractl/modify.yaml`:

@@ -10,7 +10,7 @@ Infrastructure monitoring and deployment agent for self-hosted servers.
 - **Docker Integration**: Container stats, compose project tracking
 - **Auto-Deploy**: Git pull, Docker pull, custom scripts via webhooks
 - **Three-Level Triggers**: `on_success`/`on_error` per deployment, global, and pipeline-level hooks
-- **Deployment Categories**: `app` (default) and `system` (internal-only, e.g. notifications)
+- **Deployment Categories**: `app` (default), `system` (internal-only), `protected` (CLI-only, security-critical)
 - **Telegram Notifications**: Built-in `type: telegram` with auto-silent mode
 - **Pipeline Tracking**: `pipeline_id` groups chained deployments, query via API
 - **Multi-Stage Pipelines**: Trigger chains with change detection (skip if no diff)

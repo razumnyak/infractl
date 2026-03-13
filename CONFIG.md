@@ -257,7 +257,7 @@ Duplicate names are ignored (first wins).
 |-------|------|----------|-------------|
 | `name` | string | **Yes** | Unique deployment name (used in webhook URL) |
 | `type` | enum | **Yes** | `git_pull`, `docker_pull`, `custom_script`, or `telegram` |
-| `category` | enum | No | `app` (default) or `system`. System deployments can only be triggered by other deployments |
+| `category` | enum | No | `app` (default), `system`, or `protected`. See [Deployment Categories](#deployment-categories) |
 
 **Type-specific fields:**
 
@@ -355,12 +355,15 @@ Built-in Telegram Bot API integration via `type: telegram`:
 
 #### Deployment Categories
 
-| Category | Trigger via webhook/CLI/cron | Trigger via other deployments |
-|----------|---------------------------|-------------------------------|
-| `app` (default) | Yes | Yes |
-| `system` | No (403 Forbidden) | Yes |
+| Category | Webhook | CLI | Triggers from app/system | Triggers from protected | Global triggers |
+|----------|---------|-----|--------------------------|-------------------------|-----------------|
+| `app` (default) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `system` | ❌ | ❌ | ✅ | ✅ | ❌ |
+| `protected` | ❌ | ✅ | ❌ | ✅ | ❌ |
 
-System deployments are internal tools (notifiers, rollback scripts, maintenance toggles) that should only run as part of a pipeline.
+- **app** — standard deployments, fully accessible
+- **system** — internal tools (notifiers, rollback scripts, maintenance toggles), only triggered by other deployments
+- **protected** — security-critical deployments (configs, secrets, .env files), only via CLI or from other protected deployments
 
 #### Multi-Stage Pipelines
 

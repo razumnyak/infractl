@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.18] - 2026-03-13
+
+### Added
+
+- **Protected deployment category** (`category: protected`) — CLI-only deployments for security-critical configs (tokens, .env, allowed_networks). Cannot be triggered via webhook or by non-protected deployments. Protected-to-protected triggers are allowed.
+
+### Fixed
+
+- **Infinite trigger loop** — system deployments no longer fire global `on_success`/`on_error` triggers, preventing recursive loops (e.g., telegram-notifier triggering itself)
+- Global triggers now only apply to `app` category deployments
+
+### Changed
+
+- `deploy --list` shows `[protected]` label for protected deployments
+- Webhook returns 403 for both `system` and `protected` deployments
+
 ## [0.1.17] - 2026-03-12
 
 ### Added

@@ -35,7 +35,7 @@ Home (:8111/monitoring, /webhook) → internal net → Agent(s) (:8111/health, /
 - **Storage**: SQLite, только Home, retention + aggregation
 - **Deploy**: git_pull | docker_pull | custom_script | telegram, SSH keys
 - **Triggers**: on_success/on_error (per-deploy, global, pipeline-level)
-- **Categories**: app (default) | system (internal only, no webhook/CLI)
+- **Categories**: app (default) | system (internal only, no webhook/CLI) | protected (CLI only, no triggers from non-protected)
 - **Updater**: self-update из GitHub Releases, config sync
 - **Web**: axum, embedded HTML (rust-embed), JWT middleware
 

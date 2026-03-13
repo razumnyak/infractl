@@ -171,8 +171,7 @@ pub async fn start_worker(
                 }
 
                 // 4b. Global on_error triggers (skip for system/protected deployments)
-                if !deploy_config.on_error.is_empty()
-                    && job.config.category == DeployCategory::App
+                if !deploy_config.on_error.is_empty() && job.config.category == DeployCategory::App
                 {
                     let env = build_trigger_env(&job, Some(&result), "on_error");
                     fire_triggers(

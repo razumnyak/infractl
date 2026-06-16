@@ -254,9 +254,9 @@ pub async fn get_deployment_config(
     Path(name): Path<String>,
 ) -> Result<Json<DeploymentConfig>, (StatusCode, Json<ErrorResponse>)> {
     state
-        .config
-        .modules
-        .deploy
+        .deploy_config
+        .read()
+        .await
         .deployments
         .iter()
         .find(|d| d.name == name)
@@ -272,10 +272,8 @@ pub async fn get_deployment_config(
 
 /// GET /api/deployments - Get configured deployments list
 pub async fn get_deployments(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
-    let deployments: Vec<_> = state
-        .config
-        .modules
-        .deploy
+    let deploy_config = state.deploy_config.read().await;
+    let deployments: Vec<_> = deploy_config
         .deployments
         .iter()
         .map(|d| {

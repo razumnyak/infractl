@@ -3,9 +3,13 @@ use crate::deploy::{DeployExecutor, DeployQueue};
 use crate::server::middleware::rate_limit::RateLimiter;
 use crate::storage::Database;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 pub struct AppState {
     pub config: Config,
+    /// Runtime deployment config. This is refreshed after deploy jobs so
+    /// updated deployments.d files can be used by subsequent triggers.
+    pub deploy_config: Arc<RwLock<crate::config::DeployConfig>>,
     pub start_time: std::time::Instant,
     pub rate_limiter: RateLimiter,
     /// Database connection (Home mode only)
@@ -28,6 +32,7 @@ impl AppState {
         };
 
         Arc::new(Self {
+            deploy_config: Arc::new(RwLock::new(config.modules.deploy.clone())),
             config,
             start_time: std::time::Instant::now(),
             rate_limiter: RateLimiter::default(),
@@ -48,6 +53,7 @@ impl AppState {
         };
 
         Arc::new(Self {
+            deploy_config: Arc::new(RwLock::new(config.modules.deploy.clone())),
             config,
             start_time: std::time::Instant::now(),
             rate_limiter: RateLimiter::default(),

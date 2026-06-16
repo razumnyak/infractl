@@ -11,8 +11,10 @@ pub use queue::{DeployJob, DeployQueue, JobStatus};
 use crate::config::{DeployCategory, DeployConfig, DeploymentConfig, TriggerConfig};
 use crate::storage::{Database, DeployRecord, DeployStatus};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use time::OffsetDateTime;
+use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
 /// Result of a deployment operation
@@ -30,12 +32,15 @@ pub async fn start_worker(
     queue: Arc<DeployQueue>,
     executor: Arc<DeployExecutor>,
     db: Option<Arc<Database>>,
-    deploy_config: Arc<DeployConfig>,
+    deploy_config: Arc<RwLock<DeployConfig>>,
+    config_path: PathBuf,
 ) {
     info!("Starting deployment worker");
 
     loop {
         if let Some(job) = queue.next_job().await {
+            let current_deploy_config = deploy_config.read().await.clone();
+
             info!(
                 deployment = %job.deployment_name,
                 agent = %job.agent_name,
@@ -77,7 +82,7 @@ pub async fn start_worker(
                     &job.config.pipeline.on_start,
                     &job,
                     &queue,
-                    &deploy_config.deployments,
+                    &current_deploy_config.deployments,
                     &build_trigger_env(&job, None, "on_start"),
                 )
                 .await;
@@ -85,7 +90,7 @@ pub async fn start_worker(
 
             // 2. Execute deployment
             let result = executor
-                .execute(&job.config, &deploy_config.allowed_deploy_paths)
+                .execute(&job.config, &current_deploy_config.allowed_deploy_paths)
                 .await;
 
             // Update status based on result
@@ -113,6 +118,10 @@ pub async fn start_worker(
                 );
             }
 
+            let latest_deploy_config = reload_deploy_config(&deploy_config, &config_path)
+                .await
+                .unwrap_or(current_deploy_config);
+
             if result.success && !result.skipped {
                 info!(
                     deployment = %job.deployment_name,
@@ -127,22 +136,22 @@ pub async fn start_worker(
                         &job.config.on_success,
                         &job,
                         &queue,
-                        &deploy_config.deployments,
+                        &latest_deploy_config.deployments,
                         &env,
                     )
                     .await;
                 }
 
                 // 3b. Global on_success triggers (skip for system/protected deployments)
-                if !deploy_config.on_success.is_empty()
+                if !latest_deploy_config.on_success.is_empty()
                     && job.config.category == DeployCategory::App
                 {
                     let env = build_trigger_env(&job, Some(&result), "on_success");
                     fire_triggers(
-                        &deploy_config.on_success,
+                        &latest_deploy_config.on_success,
                         &job,
                         &queue,
-                        &deploy_config.deployments,
+                        &latest_deploy_config.deployments,
                         &env,
                     )
                     .await;
@@ -166,21 +175,22 @@ pub async fn start_worker(
                         &job.config.on_error,
                         &job,
                         &queue,
-                        &deploy_config.deployments,
+                        &latest_deploy_config.deployments,
                         &env,
                     )
                     .await;
                 }
 
                 // 4b. Global on_error triggers (skip for system/protected deployments)
-                if !deploy_config.on_error.is_empty() && job.config.category == DeployCategory::App
+                if !latest_deploy_config.on_error.is_empty()
+                    && job.config.category == DeployCategory::App
                 {
                     let env = build_trigger_env(&job, Some(&result), "on_error");
                     fire_triggers(
-                        &deploy_config.on_error,
+                        &latest_deploy_config.on_error,
                         &job,
                         &queue,
-                        &deploy_config.deployments,
+                        &latest_deploy_config.deployments,
                         &env,
                     )
                     .await;
@@ -194,7 +204,7 @@ pub async fn start_worker(
                     &job.config.pipeline.on_finish,
                     &job,
                     &queue,
-                    &deploy_config.deployments,
+                    &latest_deploy_config.deployments,
                     &env,
                 )
                 .await;
@@ -203,6 +213,34 @@ pub async fn start_worker(
 
         // Small delay to prevent busy loop
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+}
+
+async fn reload_deploy_config(
+    deploy_config: &Arc<RwLock<DeployConfig>>,
+    config_path: &Path,
+) -> Option<DeployConfig> {
+    match crate::config::load(config_path) {
+        Ok(config) => {
+            let latest = config.modules.deploy;
+            let deployment_count = latest.deployments.len();
+            let mut guard = deploy_config.write().await;
+            *guard = latest.clone();
+            info!(
+                deployments = deployment_count,
+                path = %config_path.display(),
+                "Deployment config reloaded after job"
+            );
+            Some(latest)
+        }
+        Err(e) => {
+            warn!(
+                error = %e,
+                path = %config_path.display(),
+                "Failed to reload deployment config after job; keeping previous config"
+            );
+            None
+        }
     }
 }
 

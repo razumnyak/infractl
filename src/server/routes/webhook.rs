@@ -50,14 +50,13 @@ pub async fn trigger_deploy(
     body: Bytes,
 ) -> Result<Json<WebhookResponse>, (StatusCode, Json<ErrorResponse>)> {
     // Look up deployment in local config
-    let deployment = state
-        .config
-        .modules
-        .deploy
+    let deploy_config = state.deploy_config.read().await;
+    let deployment = deploy_config
         .deployments
         .iter()
         .find(|d| d.name == deployment_name)
         .cloned();
+    drop(deploy_config);
 
     // If not found locally, try fetching from Home
     let deployment = match deployment {
@@ -169,14 +168,13 @@ pub async fn trigger_shutdown(
     _body: Bytes,
 ) -> Result<Json<WebhookResponse>, (StatusCode, Json<ErrorResponse>)> {
     // Look up deployment in local config
-    let deployment = state
-        .config
-        .modules
-        .deploy
+    let deploy_config = state.deploy_config.read().await;
+    let deployment = deploy_config
         .deployments
         .iter()
         .find(|d| d.name == deployment_name)
         .cloned();
+    drop(deploy_config);
 
     // If not found locally, try fetching from Home
     let deployment = match deployment {
